@@ -92,10 +92,13 @@ async def mapped_lock(hass, make_entities, monkeypatch):
             )
         if last:
             last.async_get_last_state = AsyncMock(return_value=None)
+            lock.async_get_last_state = AsyncMock(return_value=None)
             with patch(
                 "custom_components.tuya_ble.devices.TuyaBLEEntity.async_added_to_hass",
                 new=AsyncMock(),
             ):
+                await lock.async_added_to_hass()
+                await unlock.async_added_to_hass()
                 await last.async_added_to_hass()
         report(device, coordinator, entities, 33, True)
         return SimpleNamespace(
@@ -152,6 +155,11 @@ async def test_same_person_context_for_all_three_rows_in_any_listener_order(
         "person_name": "Jorge",
     }
     assert not manual_log
+    assert [
+        event.data["entity_id"]
+        for event in changes
+        if event.data["entity_id"] in {entity.entity_id for entity in env.entities}
+    ] == [env.lock.entity_id, env.last.entity_id, env.event.entity_id]
     for entity in env.entities:
         assert (
             len(

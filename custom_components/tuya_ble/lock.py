@@ -316,6 +316,14 @@ class TuyaBLEActivityLock(TuyaBLELock):
     def _is_recently_unlocked(self) -> bool:
         return time.monotonic() < self._lock_activity_unlock_until
 
+    async def async_added_to_hass(self) -> None:
+        """Register this ready entity for lock-first activity publication."""
+        await super().async_added_to_hass()
+        if resolver := get_lock_activity(self._coordinator):
+            self.async_on_remove(
+                resolver.register_writer("lock", self._handle_coordinator_update)
+            )
+
     @callback
     def _lock_activity_relock(self, _: None) -> None:
         self._lock_activity_relock_cancel = None
@@ -366,6 +374,11 @@ class TuyaBLEActivityLock(TuyaBLELock):
             **(activity.person_data if activity else {}),
         }
         self._attr_changed_by = format_unlock_record(self._device.last_unlock)
+        if activity:
+            # Mapped activity is published lock-first by the resolver. Firing
+            # the internal signal here can synchronously write Last unlock
+            # before the lock's own state, making it the lock's Logbook cause.
+            return
         self._hass.bus.async_fire(
             LAST_UNLOCK_UPDATED,
             {"device_id": self._device.device_id, "record": self._device.last_unlock},
@@ -480,6 +493,8 @@ class TuyaBLEActivityLock(TuyaBLELock):
     def _handle_coordinator_update(self) -> None:
         """Record local unlock reports before refreshing state."""
         resolver = get_lock_activity(self._coordinator)
+        if resolver and resolver.publish_ordered_update("lock"):
+            return
         if self._lock_activity_pending_dps and time.monotonic() < getattr(
             self._device, "_lock_activity_pending_until", 0.0
         ):

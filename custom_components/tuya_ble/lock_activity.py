@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 import time
@@ -91,6 +91,41 @@ class LockActivity:
         self.activities: dict[int, UnlockActivity] = {}
         self.latest_report: TuyaBLEDataPoint | None = None
         self.has_mapping = False
+        self._writers: dict[str, Callable[[], None]] = {}
+        self._publishing = False
+        self._published_batch: list[TuyaBLEDataPoint] | None = None
+
+    def register_writer(
+        self, role: str, writer: Callable[[], None]
+    ) -> Callable[[], None]:
+        """Register only added entities; order does not depend on their listeners."""
+        self._writers[role] = writer
+
+        def unregister() -> None:
+            if self._writers.get(role) is writer:
+                self._writers.pop(role)
+
+        return unregister
+
+    def publish_ordered_update(self, role: str) -> bool:
+        """Publish attributed activity lock-first exactly once per report batch."""
+        if (
+            self.latest_activity is None
+            or self._publishing
+            or role not in self._writers
+        ):
+            return False
+        if self._published_batch is self._batch:
+            return True
+        self._published_batch = self._batch
+        self._publishing = True
+        try:
+            for name in ("lock", "last_unlock", "unlocked"):
+                if writer := self._writers.get(name):
+                    writer()
+        finally:
+            self._publishing = False
+        return True
 
     async def async_setup(self) -> None:
         """Preload accounts; callbacks must never await while processing reports."""
@@ -114,6 +149,7 @@ class LockActivity:
         for unsubscribe in self._unsubscribers:
             unsubscribe()
         self._unsubscribers.clear()
+        self._writers.clear()
 
     def prepare(self, updates: list[TuyaBLEDataPoint] | None) -> None:
         """Resolve each batch once, before any consumer changes last_unlock."""

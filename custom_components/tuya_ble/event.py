@@ -211,6 +211,14 @@ class TuyaBLEUnlockEvent(TuyaBLEEvent):
         self._unlock_report_filter = mapping.report_filter
         self._mapping = replace(mapping, report_filter=self._filter_unlock_report)
 
+    async def async_added_to_hass(self) -> None:
+        """Publish attributed events after the lock and Last unlock sensor."""
+        await super().async_added_to_hass()
+        if resolver := get_lock_activity(self._coordinator):
+            self.async_on_remove(
+                resolver.register_writer("unlocked", self._handle_coordinator_update)
+            )
+
     def _filter_unlock_report(
         self, device: TuyaBLEDevice, datapoint: TuyaBLEDataPoint
     ) -> bool:
@@ -231,11 +239,13 @@ class TuyaBLEUnlockEvent(TuyaBLEEvent):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Refresh availability without inventing or replacing a restored event."""
+        resolver = get_lock_activity(self._coordinator)
+        if resolver and resolver.publish_ordered_update("unlocked"):
+            return
         available = self.available
         if available != self._last_available:
             self._last_available = available
             self.async_write_ha_state()
-        resolver = get_lock_activity(self._coordinator)
         if resolver and resolver.has_mapping:
             dp = resolver.latest_report
             if dp is None or not self._filter_unlock_report(self._device, dp):

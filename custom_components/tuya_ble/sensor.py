@@ -2815,6 +2815,12 @@ class TuyaBLEActivitySensor(TuyaBLESensor):
         """Subscribe to attribution updates even when restore is not enabled."""
         await super().async_added_to_hass()
         if self._mapping.last_unlock:
+            if resolver := get_lock_activity(self._coordinator):
+                self.async_on_remove(
+                    resolver.register_writer(
+                        "last_unlock", self._handle_coordinator_update
+                    )
+                )
             self._last_unlock_unsub = self._hass.bus.async_listen(
                 LAST_UNLOCK_UPDATED, self._handle_last_unlock_update
             )
@@ -2832,6 +2838,8 @@ class TuyaBLEActivitySensor(TuyaBLESensor):
         resolver = (
             get_lock_activity(self._coordinator) if self._mapping.last_unlock else None
         )
+        if resolver and resolver.publish_ordered_update("last_unlock"):
+            return
         activity = resolver.latest_activity if resolver else None
         if activity:
             self._attr_native_value = format_unlock_record(activity.record)
