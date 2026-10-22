@@ -1,6 +1,9 @@
 {
   "domain": "tuya_ble",
   "name": "Tuya BLE",
+  "after_dependencies": [
+    "person"
+  ],
   "bluetooth": [
     {
       "connectable": true,

@@ -730,7 +730,14 @@
         }
     },
     "options": {
+        "abort": {
+            "lock_users_not_supported": "Esta cerradura no admite atribución de aperturas."
+        },
         "error": {
+            "invalid_lock_user_id": "Introduce un ID entero de usuario de la cerradura entre 0 y 999.",
+            "invalid_unlock_method": "Selecciona un método de apertura compatible.",
+            "person_not_found": "Selecciona una entidad de persona existente.",
+            "duplicate_lock_user": "Este método e ID ya tienen una asociación. Edita la asociación existente.",
             "device_not_registered": "El dispositivo no está registrado en la nube de Tuya",
             "invalid_auth": "Autenticación inválida",
             "mobile_account_locked": "La cuenta de Tuya está bloqueada temporalmente",
@@ -775,7 +782,8 @@
                 "menu_options": {
                     "login": "Actualizar credenciales desde la nube Tuya IoT",
                     "manual": "Editar credenciales manualmente",
-                    "settings": "Ajustes de conexión"
+                    "settings": "Ajustes de conexión",
+                    "lock_users": "Usuarios de la cerradura"
                 }
             },
             "manual": {
@@ -790,6 +798,46 @@
                     "category": "Categoría (p. ej. szjqr para Fingerbots)",
                     "device_name": "Nombre del dispositivo (opcional)",
                     "ble_unlock_check": "Código de apertura BLE (solo dappsdq4, opcional)"
+                }
+            },
+            "lock_users": {
+                "title": "Usuarios de la cerradura",
+                "description": "Asocia credenciales de la cerradura a personas. Las personas sin usuario de HA aparecen por nombre en la actividad, pero no tienen atribución nativa de usuario en el registro de actividad.",
+                "menu_options": {
+                    "lock_user_add": "Añadir asociación",
+                    "lock_user_edit": "Editar asociación",
+                    "lock_user_delete": "Eliminar asociación"
+                }
+            },
+            "lock_user_add": {
+                "title": "Añadir usuario de la cerradura",
+                "description": "Guardar recarga esta entrada; no modifica las credenciales ni los usuarios de HA.",
+                "data": {
+                    "method": "Método de apertura",
+                    "user_id": "ID de usuario de la cerradura (0–999)",
+                    "person_entity_id": "Persona"
+                }
+            },
+            "lock_user_update": {
+                "title": "Editar usuario de la cerradura",
+                "description": "Guardar recarga esta entrada; no modifica las credenciales ni los usuarios de HA.",
+                "data": {
+                    "method": "Método de apertura",
+                    "user_id": "ID de usuario de la cerradura (0–999)",
+                    "person_entity_id": "Persona"
+                }
+            },
+            "lock_user_edit": {
+                "title": "Seleccionar asociación para editar",
+                "data": {
+                    "mapping": "Asociación de usuario de la cerradura"
+                }
+            },
+            "lock_user_delete": {
+                "title": "Eliminar asociación de usuario de la cerradura",
+                "description": "Guardar elimina esta asociación y recarga la entrada. No elimina la persona ni la credencial de la cerradura.",
+                "data": {
+                    "mapping": "Asociación que eliminar"
                 }
             },
             "settings": {

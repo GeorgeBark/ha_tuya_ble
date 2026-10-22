@@ -730,7 +730,14 @@
         }
     },
     "options": {
+        "abort": {
+            "lock_users_not_supported": "This lock does not support unlock attribution."
+        },
         "error": {
+            "invalid_lock_user_id": "Enter a whole lock user ID from 0 to 999.",
+            "invalid_unlock_method": "Select a supported unlock method.",
+            "person_not_found": "Select an existing person entity.",
+            "duplicate_lock_user": "This method and user ID already have a mapping. Edit that mapping instead.",
             "device_not_registered": "O dispositivo não está registrado na nuvem da Tuya",
             "invalid_auth": "Autenticação inválida",
             "mobile_account_locked": "A conta Tuya está temporariamente bloqueada",
@@ -775,7 +782,8 @@
                 "menu_options": {
                     "login": "Atualizar credenciais da nuvem Tuya IoT",
                     "manual": "Editar credenciais manualmente",
-                    "settings": "Configurações de conexão"
+                    "settings": "Configurações de conexão",
+                    "lock_users": "Lock users"
                 }
             },
             "manual": {
@@ -790,6 +798,46 @@
                     "category": "Categoria (ex.: szjqr para Fingerbots)",
                     "device_name": "Nome do dispositivo (opcional)",
                     "ble_unlock_check": "Código de desbloqueio BLE (somente dappsdq4, opcional)"
+                }
+            },
+            "lock_users": {
+                "title": "Lock users",
+                "description": "Map lock credentials to people. People without an HA user can be named in activity, but cannot receive native Logbook user attribution.",
+                "menu_options": {
+                    "lock_user_add": "Add mapping",
+                    "lock_user_edit": "Edit mapping",
+                    "lock_user_delete": "Delete mapping"
+                }
+            },
+            "lock_user_add": {
+                "title": "Add lock user",
+                "description": "Saving reloads this entry; it does not change lock credentials or HA users.",
+                "data": {
+                    "method": "Unlock method",
+                    "user_id": "Lock user ID (0–999)",
+                    "person_entity_id": "Person"
+                }
+            },
+            "lock_user_update": {
+                "title": "Edit lock user",
+                "description": "Saving reloads this entry; it does not change lock credentials or HA users.",
+                "data": {
+                    "method": "Unlock method",
+                    "user_id": "Lock user ID (0–999)",
+                    "person_entity_id": "Person"
+                }
+            },
+            "lock_user_edit": {
+                "title": "Choose a mapping to edit",
+                "data": {
+                    "mapping": "Lock user mapping"
+                }
+            },
+            "lock_user_delete": {
+                "title": "Delete lock user mapping",
+                "description": "Saving removes this mapping and reloads the entry. The person and lock credential are not deleted.",
+                "data": {
+                    "mapping": "Mapping to delete"
                 }
             },
             "settings": {

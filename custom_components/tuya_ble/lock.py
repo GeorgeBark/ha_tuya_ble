@@ -23,11 +23,16 @@ from .lock_restore import (
     latest_timestamp,
     restore_device_activity,
 )
+from .lock_activity import (
+    UnlockActivity,
+    format_unlock_record,
+    get_lock_activity,
+    scoped_activity_context,
+)
 from .util import (
     LAST_UNLOCK_UPDATED,
     HOME_ASSISTANT_METHOD,
     UNLOCK_METHODS,
-    format_unlock_source,
 )
 from .devices import (
     TuyaBLEData,
@@ -347,18 +352,28 @@ class TuyaBLEActivityLock(TuyaBLELock):
         self.async_write_ha_state()
 
     def _lock_activity_set_last_unlock(
-        self, method: str, user_id: int | None, timestamp: float | None
+        self,
+        method: str,
+        user_id: int | None,
+        timestamp: float | None,
+        activity: UnlockActivity | None = None,
     ) -> None:
         """Store and publish the most recent unlock source."""
         self._device.last_unlock = {
             "method": method,
             "user_id": user_id,
             "timestamp": timestamp,
+            **(activity.person_data if activity else {}),
         }
-        self._attr_changed_by = format_unlock_source(method, user_id)
+        self._attr_changed_by = format_unlock_record(self._device.last_unlock)
         self._hass.bus.async_fire(
             LAST_UNLOCK_UPDATED,
-            {"device_id": self._device.device_id},
+            {"device_id": self._device.device_id, "record": self._device.last_unlock},
+            context=(
+                activity.context
+                if activity
+                else self._context if method == HOME_ASSISTANT_METHOD else None
+            ),
         )
 
     def _lock_activity_note_unlock(self, datapoint) -> None:
@@ -392,13 +407,29 @@ class TuyaBLEActivityLock(TuyaBLELock):
                 last_timestamp, timestamp
             )
         method_key, _ = UNLOCK_METHODS[datapoint.id]
+        resolver = get_lock_activity(self._coordinator)
+        activity = resolver.activities.get(datapoint.id) if resolver else None
         if self._device.product_id in util.UNLOCK_ATTRIBUTION:
             self._lock_activity_last_unlock = {
                 "last_unlock_method": method_key,
                 "last_unlock_user_id": datapoint.value,
                 "last_unlock_time": timestamp,
+                **(
+                    {
+                        "last_unlock_person_entity_id": activity.person_entity_id,
+                        "last_unlock_person_name": activity.person_name,
+                    }
+                    if activity
+                    else {}
+                ),
             }
-            self._lock_activity_set_last_unlock(method_key, datapoint.value, timestamp)
+            self._lock_activity_set_last_unlock(
+                method_key, datapoint.value, timestamp, activity
+            )
+        if datapoint.id == 19:
+            if activity:
+                self._fire_lock_activity_event(datapoint, activity)
+            return
         if self._device.product_id not in util.LOCAL_UNLOCK_WINDOW:
             return
         remaining = timestamp + delay + LOCAL_UNLOCK_RELOCK_MARGIN - time.time()
@@ -410,6 +441,12 @@ class TuyaBLEActivityLock(TuyaBLELock):
         self._lock_activity_relock_cancel = async_call_later(
             self._hass, remaining, self._lock_activity_relock
         )
+        self._fire_lock_activity_event(datapoint, activity)
+
+    def _fire_lock_activity_event(
+        self, datapoint, activity: UnlockActivity | None
+    ) -> None:
+        """Keep the existing bus API, adding identity only when mapped."""
         self._hass.bus.async_fire(
             EVENT_LOCK,
             {
@@ -417,7 +454,9 @@ class TuyaBLEActivityLock(TuyaBLELock):
                 "entity_id": self.entity_id,
                 "method": UNLOCK_METHODS[datapoint.id][1],
                 "user_id": datapoint.value,
+                **(activity.person_data if activity else {}),
             },
+            context=activity.context if activity else None,
         )
 
     async def async_will_remove_from_hass(self) -> None:
@@ -440,6 +479,7 @@ class TuyaBLEActivityLock(TuyaBLELock):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Record local unlock reports before refreshing state."""
+        resolver = get_lock_activity(self._coordinator)
         if self._lock_activity_pending_dps and time.monotonic() < getattr(
             self._device, "_lock_activity_pending_until", 0.0
         ):
@@ -467,7 +507,11 @@ class TuyaBLEActivityLock(TuyaBLELock):
                 or self._device.product_id in util.UNLOCK_ATTRIBUTION
             ):
                 self._lock_activity_note_unlock(datapoint)
-        super()._handle_coordinator_update()
+            elif datapoint.id == 19 and resolver and 19 in resolver.activities:
+                self._lock_activity_note_unlock(datapoint)
+        activity = resolver.latest_activity if resolver else None
+        with scoped_activity_context(self, activity.context if activity else None):
+            super()._handle_coordinator_update()
 
     @property
     def is_open(self) -> bool | None:
@@ -600,6 +644,10 @@ class TuyaBLERestoreLock(TuyaBLEActivityLock, RestoreEntity):
                     "user_id": attributes.get("last_unlock_user_id"),
                     "timestamp": timestamp,
                 }
+                for key in ("person_entity_id", "person_name"):
+                    if (value := attributes.get(f"last_unlock_{key}")) is not None:
+                        self._lock_activity_last_unlock[f"last_unlock_{key}"] = value
+                        record[key] = value
                 self._lock_activity_last_report_time = timestamp
                 restore_device_activity(
                     self._device, record, timestamp, prefer_record=True

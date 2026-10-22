@@ -32,12 +32,14 @@ from .const import (
     CONF_IDLE_DISCONNECT_DELAY,
     CONF_KEEP_CONNECTION,
     CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN,
+    CONF_LOCK_USERS,
     DEFAULT_IDLE_DISCONNECT_DELAY,
     DEFAULT_KEEP_CONNECTION,
     DOMAIN,
 )
 from .devices import TuyaBLECoordinator, TuyaBLEData, get_device_product_info
 from . import util
+from .lock_activity import LockActivity
 
 PLATFORMS: list[Platform] = [
     Platform.BUTTON,
@@ -162,6 +164,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     product_info = get_device_product_info(device)
 
     coordinator = TuyaBLECoordinator(hass, device)
+    if (
+        device.category in util.LOCK_CATEGORIES
+        and device.product_id in util.UNLOCK_ATTRIBUTION
+        and (mappings := entry.options.get(CONF_LOCK_USERS))
+    ):
+        activity = coordinator.lock_activity = LockActivity(hass, device, mappings)
+        await activity.async_setup()
+        entry.async_on_unload(activity.async_close)
 
     async def _initial_update() -> None:
         """Perform the first update, retrying until the device answers.
@@ -247,6 +257,12 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
         or any(
             entry.options.get(key) != data.manager.data.get(key)
             for key in CREDENTIAL_OPTION_KEYS
+        )
+        or (
+            data.device.category in util.LOCK_CATEGORIES
+            and data.device.product_id in util.UNLOCK_ATTRIBUTION
+            and entry.options.get(CONF_LOCK_USERS, [])
+            != data.manager.data.get(CONF_LOCK_USERS, [])
         )
         or (
             data.device.category in util.LOCK_CATEGORIES

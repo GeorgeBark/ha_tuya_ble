@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN
 from . import util
+from .lock_activity import get_lock_activity, scoped_activity_context
 from .util import is_lock_event_recent
 from .devices import TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .tuya_ble import TuyaBLEDataPoint, TuyaBLEDevice
@@ -234,6 +235,24 @@ class TuyaBLEUnlockEvent(TuyaBLEEvent):
         if available != self._last_available:
             self._last_available = available
             self.async_write_ha_state()
+        resolver = get_lock_activity(self._coordinator)
+        if resolver and resolver.has_mapping:
+            dp = resolver.latest_report
+            if dp is None or not self._filter_unlock_report(self._device, dp):
+                return
+            method = util.UNLOCK_METHODS[dp.id][0]
+            activity = resolver.activities.get(dp.id)
+            self._trigger_event(
+                method,
+                {
+                    "method": method,
+                    "user_id": dp.value,
+                    **(activity.person_data if activity else {}),
+                },
+            )
+            with scoped_activity_context(self, activity.context if activity else None):
+                self.async_write_ha_state()
+            return
         super()._handle_coordinator_update()
 
 

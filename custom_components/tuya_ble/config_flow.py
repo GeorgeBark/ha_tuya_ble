@@ -41,6 +41,14 @@ from homeassistant.const import (
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowHandler, FlowResult
 from homeassistant.helpers.selector import (
+    EntitySelector,
+    EntitySelectorConfig,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -71,6 +79,7 @@ from .const import (
     CONF_IDLE_DISCONNECT_DELAY,
     CONF_KEEP_CONNECTION,
     CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN,
+    CONF_LOCK_USERS,
     CONF_MOBILE_APP,
     CONF_SEC_KEY,
     CONF_STATUS_RANGE,
@@ -421,14 +430,177 @@ class TuyaBLEOptionsFlow(OptionsFlowWithConfigEntry):
         self._candidate_manager: HASSTuyaBLEDeviceManager | None = None
         self._pending_credentials: TuyaBLEDeviceCredentials | None = None
         self._mobile_error: str | None = None
+        self._editing_lock_user: str | None = None
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
+        menu = ["login", "manual", "settings"]
+        if self._supports_lock_users:
+            menu.append("lock_users")
         return self.async_show_menu(
             step_id="init",
-            menu_options=["login", "manual", "settings"],
+            menu_options=menu,
+        )
+
+    @property
+    def _supports_lock_users(self) -> bool:
+        options = self.config_entry.options
+        return (
+            options.get(CONF_CATEGORY) in util.LOCK_CATEGORIES
+            and options.get(CONF_PRODUCT_ID) in util.UNLOCK_ATTRIBUTION
+        )
+
+    @property
+    def _lock_users(self) -> list[dict[str, Any]]:
+        return list(self.config_entry.options.get(CONF_LOCK_USERS, []))
+
+    @staticmethod
+    def _lock_user_key(item: dict[str, Any]) -> str:
+        return f"{item['method']}:{item['user_id']}"
+
+    async def async_step_lock_users(self, user_input=None) -> FlowResult:
+        """Manage per-method lock credentials without changing HA people."""
+        if not self._supports_lock_users:
+            return self.async_abort(reason="lock_users_not_supported")
+        menu = ["lock_user_add"]
+        if self._lock_users:
+            menu.extend(["lock_user_edit", "lock_user_delete"])
+        return self.async_show_menu(step_id="lock_users", menu_options=menu)
+
+    def _lock_user_schema(self, defaults: dict[str, Any]) -> vol.Schema:
+        return vol.Schema(
+            {
+                vol.Required(
+                    "method", default=defaults.get("method", "fingerprint")
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[
+                            {"value": method, "label": label}
+                            for method, label in util.UNLOCK_METHODS.values()
+                        ],
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(
+                    "user_id", default=defaults.get("user_id", 0)
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=0, max=999, step=1, mode=NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Required(
+                    "person_entity_id",
+                    **(
+                        {"default": defaults["person_entity_id"]}
+                        if "person_entity_id" in defaults
+                        else {}
+                    ),
+                ): EntitySelector(EntitySelectorConfig(domain="person")),
+            }
+        )
+
+    def _lock_user_selection_schema(self) -> vol.Schema:
+        methods = dict(util.UNLOCK_METHODS.values())
+        choices = {}
+        for item in self._lock_users:
+            person = self.hass.states.get(item["person_entity_id"])
+            name = person.attributes.get("friendly_name") if person else None
+            choices[self._lock_user_key(item)] = (
+                f"{methods[item['method']]} {item['user_id']} → {name or item['person_entity_id']}"
+            )
+        return vol.Schema({vol.Required("mapping"): vol.In(choices)})
+
+    def _save_lock_users(self, mappings: list[dict[str, Any]]) -> FlowResult:
+        return self.async_create_entry(
+            title=self.config_entry.title,
+            data={**self.config_entry.options, CONF_LOCK_USERS: mappings},
+        )
+
+    async def _async_lock_user_form(self, step_id: str, user_input) -> FlowResult:
+        if not self._supports_lock_users:
+            return self.async_abort(reason="lock_users_not_supported")
+        defaults = next(
+            (
+                item
+                for item in self._lock_users
+                if self._lock_user_key(item) == self._editing_lock_user
+            ),
+            {},
+        )
+        errors = {}
+        if user_input is not None:
+            defaults = user_input
+            number = user_input.get("user_id")
+            if (
+                isinstance(number, bool)
+                or not isinstance(number, (int, float))
+                or not 0 <= number <= 999
+                or number != int(number)
+            ):
+                errors["user_id"] = "invalid_lock_user_id"
+            if user_input.get("method") not in dict(util.UNLOCK_METHODS.values()):
+                errors["method"] = "invalid_unlock_method"
+            person_id = user_input.get("person_entity_id", "")
+            if (
+                not isinstance(person_id, str)
+                or not person_id.startswith("person.")
+                or self.hass.states.get(person_id) is None
+            ):
+                errors["person_entity_id"] = "person_not_found"
+            if not errors:
+                item = {
+                    "method": user_input["method"],
+                    "user_id": int(number),
+                    "person_entity_id": person_id,
+                }
+                mappings = [
+                    entry
+                    for entry in self._lock_users
+                    if self._lock_user_key(entry) != self._editing_lock_user
+                ]
+                if any(
+                    self._lock_user_key(entry) == self._lock_user_key(item)
+                    for entry in mappings
+                ):
+                    errors["base"] = "duplicate_lock_user"
+                else:
+                    return self._save_lock_users([*mappings, item])
+        return self.async_show_form(
+            step_id=step_id, data_schema=self._lock_user_schema(defaults), errors=errors
+        )
+
+    async def async_step_lock_user_add(self, user_input=None) -> FlowResult:
+        self._editing_lock_user = None
+        return await self._async_lock_user_form("lock_user_add", user_input)
+
+    async def async_step_lock_user_edit(self, user_input=None) -> FlowResult:
+        if not self._supports_lock_users:
+            return self.async_abort(reason="lock_users_not_supported")
+        if user_input is not None:
+            self._editing_lock_user = user_input["mapping"]
+            return await self.async_step_lock_user_update()
+        return self.async_show_form(
+            step_id="lock_user_edit", data_schema=self._lock_user_selection_schema()
+        )
+
+    async def async_step_lock_user_update(self, user_input=None) -> FlowResult:
+        return await self._async_lock_user_form("lock_user_update", user_input)
+
+    async def async_step_lock_user_delete(self, user_input=None) -> FlowResult:
+        if not self._supports_lock_users:
+            return self.async_abort(reason="lock_users_not_supported")
+        if user_input is not None:
+            return self._save_lock_users(
+                [
+                    item
+                    for item in self._lock_users
+                    if self._lock_user_key(item) != user_input["mapping"]
+                ]
+            )
+        return self.async_show_form(
+            step_id="lock_user_delete", data_schema=self._lock_user_selection_schema()
         )
 
     async def async_step_settings(

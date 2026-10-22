@@ -48,7 +48,12 @@ from .lock_restore import (
     latest_timestamp,
     restore_device_activity,
 )
-from .util import LAST_UNLOCK_UPDATED, UNLOCK_METHODS, format_unlock_source
+from .lock_activity import (
+    format_unlock_record,
+    get_lock_activity,
+    scoped_activity_context,
+)
+from .util import LAST_UNLOCK_UPDATED, UNLOCK_METHODS
 from .devices import TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .tuya_ble import TuyaBLEDataPointType, TuyaBLEDevice
 
@@ -131,9 +136,7 @@ def bstuokey_battery_getter(self: TuyaBLESensor) -> None:
 def last_unlock_getter(self: TuyaBLESensor) -> None:
     """Expose the timestamped lock's most recent unlock source."""
     if record := getattr(self._device, "last_unlock", None):
-        self._attr_native_value = format_unlock_source(
-            record["method"], record["user_id"]
-        )
+        self._attr_native_value = format_unlock_record(record)
         self._attr_extra_state_attributes = record
 
 
@@ -2824,13 +2827,37 @@ class TuyaBLEActivitySensor(TuyaBLESensor):
         await super().async_will_remove_from_hass()
 
     @callback
+    def _handle_coordinator_update(self) -> None:
+        """Use the same report snapshot/context even if the lock listener is later."""
+        resolver = (
+            get_lock_activity(self._coordinator) if self._mapping.last_unlock else None
+        )
+        activity = resolver.latest_activity if resolver else None
+        if activity:
+            self._attr_native_value = format_unlock_record(activity.record)
+            self._attr_extra_state_attributes = activity.record
+            with scoped_activity_context(self, activity.context):
+                self.async_write_ha_state()
+            return
+        super()._handle_coordinator_update()
+
+    @callback
     def _handle_last_unlock_update(self, event: Event) -> None:
         """Refresh the aggregate last-unlock sensor for its own device."""
         if event.data["device_id"] != self._device.device_id:
             return
-        if self._mapping.getter:
+        record = event.data.get("record")
+        if record is not None:
+            # A queued notification must never roll activity back after a newer
+            # report/HA command has already replaced the device's record.
+            if record is not getattr(self._device, "last_unlock", None):
+                return
+            self._attr_native_value = format_unlock_record(record)
+            self._attr_extra_state_attributes = record
+        elif self._mapping.getter:
             self._mapping.getter(self)
-        self.async_write_ha_state()
+        with scoped_activity_context(self, event.context):
+            self.async_write_ha_state()
 
 
 class TuyaBLERestoreSensor(TuyaBLEActivitySensor, RestoreEntity):
@@ -2879,6 +2906,11 @@ class TuyaBLERestoreSensor(TuyaBLEActivitySensor, RestoreEntity):
                     key: last_state.attributes.get(key)
                     for key in ("method", "user_id", "timestamp")
                 }
+                for key in ("person_entity_id", "person_name"):
+                    if key in last_state.attributes:
+                        self._attr_extra_state_attributes[key] = last_state.attributes[
+                            key
+                        ]
                 timestamp = self._attr_extra_state_attributes["timestamp"]
                 if isinstance(timestamp, (int, float)):
                     restore_device_activity(
