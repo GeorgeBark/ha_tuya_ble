@@ -296,11 +296,11 @@ async def test_window_timestamp_filter_does_not_require_attribution(
     device, coordinator, entity, _, _ = await make_entities(FAKE_PRODUCT)
     report(device, coordinator, [entity], 36, 20)
     report(device, coordinator, [entity], 12, 1, timestamp=995)
-    assert entity._lock_activity_unlock_until == 515
+    assert entity._lock_activity_unlock_until == 516
     timer = entity._lock_activity_relock_cancel
     report(device, coordinator, [entity], 12, 1, timestamp=994)
     assert entity._lock_activity_relock_cancel is timer
-    assert entity._lock_activity_unlock_until == 515
+    assert entity._lock_activity_unlock_until == 516
     assert entity.extra_state_attributes is None
     assert entity.changed_by is None
 

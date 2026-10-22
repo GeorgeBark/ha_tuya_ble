@@ -43,6 +43,8 @@ DP71_TIMESTAMPED_UNLOCK_PRODUCT_IDS = frozenset({"dappsdq4"})
 # BLE reports acknowledge HA Open; only the other methods open a local window.
 LOCAL_UNLOCK_DPS = UNLOCK_METHODS.keys() - {19}
 LOCK_COMMAND_PENDING_TIMEOUT = 5
+# Device event timestamps truncate fractional seconds; never infer relock early.
+LOCAL_UNLOCK_RELOCK_MARGIN = 1
 
 
 def build_timestamped_unlock_command(ble_unlock_check: str, timestamp: int) -> bytes:
@@ -386,7 +388,7 @@ class TuyaBLEActivityLock(TuyaBLELock):
             self._lock_activity_set_last_unlock(method_key, datapoint.value, timestamp)
         if self._device.product_id not in util.LOCAL_UNLOCK_WINDOW:
             return
-        remaining = timestamp + delay - time.time()
+        remaining = timestamp + delay + LOCAL_UNLOCK_RELOCK_MARGIN - time.time()
         if remaining <= 0:
             return
         self._lock_activity_unlock_until = time.monotonic() + remaining
@@ -519,7 +521,7 @@ class TuyaBLEActivityLock(TuyaBLELock):
         if self._use_open_state:
             auto_lock_time = self._device.datapoints[36]
             delay = int(auto_lock_time.value) if auto_lock_time else 5
-            open_until = time.monotonic() + delay
+            open_until = time.monotonic() + delay + LOCAL_UNLOCK_RELOCK_MARGIN
         await ble_unlock.set_value(command)
         if self._use_open_state and (remaining := open_until - time.monotonic()) > 0:
             self._lock_activity_unlock_until = open_until

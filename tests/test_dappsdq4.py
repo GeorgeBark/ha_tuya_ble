@@ -393,7 +393,7 @@ async def test_lock_activity_ignores_old_unlock_events(hass: HomeAssistant) -> N
         patch("time.monotonic", return_value=500),
     ):
         lock._handle_coordinator_update()
-    assert lock._lock_activity_unlock_until == 515
+    assert lock._lock_activity_unlock_until == 516
     lock._lock_activity_relock_cancel()
 
     lock.async_get_last_state = AsyncMock(
@@ -549,10 +549,10 @@ def test_reconnect_true_snapshot_keeps_unlock_window(activity_lock) -> None:
     cancel_timer = lock._lock_activity_relock_cancel
     report(33, True)
     assert lock._lock_activity_relock_cancel is cancel_timer
-    assert lock._lock_activity_unlock_until == 520
-    with patch("time.monotonic", return_value=519.999):
+    assert lock._lock_activity_unlock_until == 521
+    with patch("time.monotonic", return_value=520.999):
         assert lock.is_locked is False
-    with patch("time.monotonic", return_value=520):
+    with patch("time.monotonic", return_value=521):
         assert lock.is_locked is True
     assert lock.changed_by == "Fingerprint 1"
 
@@ -572,7 +572,7 @@ def test_passage_false_to_true_closes_window_preserving_source(activity_lock) ->
     assert lock.changed_by == "Fingerprint 1"
 
 
-@pytest.mark.parametrize("age,remaining", [(5, 15), (20, 0), (25, 0)])
+@pytest.mark.parametrize("age,remaining", [(5, 16), (20, 1), (21, 0), (25, 0)])
 def test_unlock_window_uses_device_timestamp(activity_lock, age, remaining) -> None:
     """Delivery delay reduces the window; expired reports never open it."""
     lock, report = activity_lock

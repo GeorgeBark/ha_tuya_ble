@@ -66,7 +66,7 @@ async def test_local_release_uses_original_window_in_both_modes(
         assert entity.is_locked is False
         assert bool(entity.is_open) is bool(enabled)
         assert entity.state == (LockState.OPEN if enabled else LockState.UNLOCKED)
-    assert entity._lock_activity_unlock_until == 515
+    assert entity._lock_activity_unlock_until == 516
     method, label = util.UNLOCK_METHODS[dp_id]
     assert entity.changed_by == f"{label} 7"
     assert entity.extra_state_attributes == {
@@ -77,7 +77,7 @@ async def test_local_release_uses_original_window_in_both_modes(
     events[0]._trigger_event.assert_called_once_with(
         method, {"method": method, "user_id": 7}
     )
-    with patch("time.monotonic", return_value=515):
+    with patch("time.monotonic", return_value=516):
         assert entity.is_locked is True
         assert not entity.is_open
         assert entity.state == LockState.LOCKED
@@ -112,8 +112,8 @@ async def test_ha_open_only_starts_open_window_after_success(
         }
         if enabled:
             # Acceptance latency does not extend the interval beyond send + DP36.
-            assert entity._lock_activity_unlock_until == 500 + (delay or 5)
-            clock[0] = 500 + (delay or 5)
+            assert entity._lock_activity_unlock_until == 500 + (delay or 5) + 1
+            clock[0] = 500 + (delay or 5) + 1
             assert entity.state == LockState.LOCKED
         else:
             assert entity._lock_activity_relock_cancel is None
@@ -394,3 +394,54 @@ def test_open_option_label_and_description_exist_in_every_language():
         settings = json.loads(path.read_text())["options"]["step"]["settings"]
         assert settings["data"][OPTION]
         assert settings["data_description"][OPTION]
+
+
+@pytest.mark.parametrize(
+    "enabled,source", [(False, "local"), (True, "local"), (True, "ha")]
+)
+async def test_second_resolution_relock_margin_is_one_second(
+    make_open_lock, enabled, source
+):
+    """A truncated timestamp must not report locked before physical relock."""
+    assert lock.LOCAL_UNLOCK_RELOCK_MARGIN == 1
+    device, coordinator, entity, _, _ = await make_open_lock(enabled)
+    report(device, coordinator, [entity], 36, 20)
+    report(device, coordinator, [entity], 33, True)
+    if source == "local":
+        report(device, coordinator, [entity], 12, 7, timestamp=1000)
+    else:
+        device._device_info.ble_unlock_check = CHECK_VALUE
+        with patch("time.monotonic", return_value=500):
+            await entity.async_open()
+    assert entity._lock_activity_unlock_until == 521
+    for now in (520, 520.5, 520.999):
+        with patch("time.monotonic", return_value=now):
+            assert entity.is_locked is False
+            assert entity.state == (LockState.OPEN if enabled else LockState.UNLOCKED)
+    with patch("time.monotonic", return_value=521):
+        assert entity.state == LockState.LOCKED
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_dp33_transition_cancels_relock_margin_immediately(
+    make_open_lock, enabled
+):
+    device, coordinator, entity, _, _ = await make_open_lock(enabled)
+    report(device, coordinator, [entity], 36, 20)
+    report(device, coordinator, [entity], 33, False)
+    report(device, coordinator, [entity], 12, 7)
+    # Deliver the automatic-lock transition during the added second itself.
+    device.datapoints._update_from_device(
+        33, 1020.5, 0, lock.TuyaBLEDataPointType.DT_BOOL, True
+    )
+    coordinator.last_updates = [device.datapoints[33]]
+    with patch("time.monotonic", return_value=520.5):
+        entity._handle_coordinator_update()
+        assert entity.state == LockState.LOCKED
+        assert entity._lock_activity_relock_cancel is None
+
+
+def test_recent_event_filter_keeps_its_existing_delivery_margin():
+    """Relock safety does not extend the separate DP36 + ten-second filter."""
+    assert util.is_lock_event_recent(985, 5, 1000)
+    assert not util.is_lock_event_recent(984, 5, 1000)
