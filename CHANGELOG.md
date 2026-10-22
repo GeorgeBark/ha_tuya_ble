@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog],
 and this project adheres to [Semantic Versioning].
 
+## Unreleased
+
+### Devices
+
+* **device:** add 8052F66 Smart Lock (jtmspro / dappsdq4)
+
 ## [0.12.4](https://github.com/ha-tuya-ble/ha_tuya_ble/compare/0.12.3...0.12.4) (2026-10-12)
 
 

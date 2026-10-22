@@ -22,8 +22,9 @@ from homeassistant.const import (
     UnitOfElectricPotential,
     Platform,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -41,11 +42,13 @@ from .const import (
     PARKSIDE_MOWER_STATUSES,
     PARKSIDE_MOWER_WARNINGS,
 )
+from .dappsdq4 import DAPP_SDQ4_LAST_UNLOCK_UPDATED, format_dappsdq4_unlock
 from .devices import TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .tuya_ble import TuyaBLEDataPointType, TuyaBLEDevice
 
 _LOGGER = logging.getLogger(__name__)
 SIGNAL_STRENGTH_DP_ID = -1
+DAPP_SDQ4_LAST_UNLOCK_DP_ID = -2
 TuyaBLESensorIsAvailable = Callable[["TuyaBLESensor", TuyaBLEProductInfo], bool] | None
 
 
@@ -61,6 +64,8 @@ class TuyaBLESensorMapping:
     coefficient: float = 1.0
     icons: list[str] | None = None
     is_available: TuyaBLESensorIsAvailable = None
+    restore_value: bool = False
+    last_unlock: bool = False
 
 
 @dataclass
@@ -114,6 +119,15 @@ def bstuokey_battery_getter(self: TuyaBLESensor) -> None:
             "low": 30,
             "poweroff": 0,
         }.get(datapoint.value)
+
+
+def dappsdq4_last_unlock_getter(self: TuyaBLESensor) -> None:
+    """Expose the dappsdq4 lock's most recent unlock source."""
+    if record := getattr(self._device, "dappsdq4_last_unlock", None):
+        self._attr_native_value = format_dappsdq4_unlock(
+            record["method"], record["user_id"]
+        )
+        self._attr_extra_state_attributes = record
 
 
 # The Parkside mower reports its logs, schedules and zones as raw datapoints.
@@ -662,6 +676,117 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         suggested_display_precision=0,
                         entity_category=EntityCategory.DIAGNOSTIC,
                     ),
+                ),
+            ],
+            "dappsdq4": [  # 8052F66 Smart Lock
+                TuyaBLEBatteryMapping(
+                    dp_id=8,
+                    description=SensorEntityDescription(
+                        key="battery",
+                        device_class=SensorDeviceClass.BATTERY,
+                        native_unit_of_measurement=PERCENTAGE,
+                        state_class=SensorStateClass.MEASUREMENT,
+                        suggested_display_precision=0,
+                        entity_category=EntityCategory.DIAGNOSTIC,
+                    ),
+                ),
+                TuyaBLESensorMapping(
+                    dp_id=DAPP_SDQ4_LAST_UNLOCK_DP_ID,
+                    description=SensorEntityDescription(
+                        key="last_unlock", icon="mdi:lock-open-variant"
+                    ),
+                    getter=dappsdq4_last_unlock_getter,
+                    restore_value=True,
+                    last_unlock=True,
+                ),
+                TuyaBLESensorMapping(
+                    dp_id=21,
+                    description=SensorEntityDescription(
+                        key="alarm_lock",
+                        icon="mdi:alert",
+                        device_class=SensorDeviceClass.ENUM,
+                        options=[
+                            "wrong_finger",
+                            "wrong_password",
+                            "wrong_card",
+                            "wrong_face",
+                            "tongue_bad",
+                            "too_hot",
+                            "unclosed_time",
+                            "tongue_not_out",
+                            "pry",
+                            "key_in",
+                            "low_battery",
+                            "power_off",
+                            "shock",
+                            "defense",
+                        ],
+                        entity_registry_enabled_default=False,
+                    ),
+                    restore_value=True,
+                ),
+                TuyaBLESensorMapping(
+                    dp_id=12,
+                    description=SensorEntityDescription(
+                        key="unlock_fingerprint",
+                        icon="mdi:fingerprint",
+                        entity_registry_enabled_default=False,
+                    ),
+                    restore_value=True,
+                ),
+                TuyaBLESensorMapping(
+                    dp_id=13,
+                    description=SensorEntityDescription(
+                        key="unlock_password",
+                        icon="mdi:keyboard-outline",
+                        entity_registry_enabled_default=False,
+                    ),
+                    restore_value=True,
+                ),
+                TuyaBLESensorMapping(
+                    dp_id=14,
+                    description=SensorEntityDescription(
+                        key="unlock_dynamic",
+                        icon="mdi:form-textbox-password",
+                        entity_registry_enabled_default=False,
+                    ),
+                    restore_value=True,
+                ),
+                TuyaBLESensorMapping(
+                    dp_id=15,
+                    description=SensorEntityDescription(
+                        key="unlock_card",
+                        icon="mdi:nfc-variant",
+                        entity_registry_enabled_default=False,
+                    ),
+                    restore_value=True,
+                ),
+                TuyaBLESensorMapping(
+                    dp_id=19,
+                    description=SensorEntityDescription(
+                        key="unlock_ble",
+                        icon="mdi:bluetooth",
+                        entity_registry_enabled_default=False,
+                    ),
+                    restore_value=True,
+                ),
+                TuyaBLESensorMapping(
+                    dp_id=55,
+                    description=SensorEntityDescription(
+                        key="unlock_temporary",
+                        icon="mdi:lock-clock",
+                        entity_registry_enabled_default=False,
+                    ),
+                    restore_value=True,
+                ),
+                TuyaBLESensorMapping(
+                    dp_id=62,
+                    description=SensorEntityDescription(
+                        key="unlock_phone_remote",
+                        icon="mdi:cellphone-lock",
+                        entity_registry_enabled_default=False,
+                    ),
+                    restore_value=True,
                 ),
             ],
             **dict.fromkeys(
@@ -2553,7 +2678,7 @@ def get_mapping_by_device(device: TuyaBLEDevice) -> list[TuyaBLESensorMapping]:
     return []
 
 
-class TuyaBLESensor(TuyaBLEEntity, SensorEntity):
+class TuyaBLESensor(TuyaBLEEntity, RestoreEntity, SensorEntity):
     """Representation of a Tuya BLE sensor."""
 
     platform = Platform.SENSOR
@@ -2568,6 +2693,47 @@ class TuyaBLESensor(TuyaBLEEntity, SensorEntity):
     ) -> None:
         super().__init__(hass, coordinator, device, product, mapping.description)
         self._mapping = mapping
+        self._last_unlock_unsub: Callable[[], None] | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the last event-like value until the lock reports again."""
+        await super().async_added_to_hass()
+        if self._mapping.restore_value and (
+            last_state := await self.async_get_last_state()
+        ):
+            if self._mapping.last_unlock:
+                self._attr_native_value = last_state.state
+                self._attr_extra_state_attributes = {
+                    key: last_state.attributes.get(key)
+                    for key in ("method", "user_id", "timestamp")
+                }
+            elif self._mapping.dp_id == 21:
+                self._attr_native_value = last_state.state
+            else:
+                try:
+                    self._attr_native_value = int(last_state.state)
+                except ValueError:
+                    pass
+        if self._mapping.last_unlock:
+            self._last_unlock_unsub = self._hass.bus.async_listen(
+                DAPP_SDQ4_LAST_UNLOCK_UPDATED, self._handle_last_unlock_update
+            )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unsubscribe from the dappsdq4 internal unlock update signal."""
+        if self._last_unlock_unsub:
+            self._last_unlock_unsub()
+            self._last_unlock_unsub = None
+        await super().async_will_remove_from_hass()
+
+    @callback
+    def _handle_last_unlock_update(self, event: Event) -> None:
+        """Refresh the aggregate last-unlock sensor for its own device."""
+        if event.data["device_id"] != self._device.device_id:
+            return
+        if self._mapping.getter:
+            self._mapping.getter(self)
+        self.async_write_ha_state()
 
     @callback
     def _handle_coordinator_update(self) -> None:
