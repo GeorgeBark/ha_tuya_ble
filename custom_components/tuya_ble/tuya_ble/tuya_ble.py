@@ -41,7 +41,6 @@ from .const import (
     RECONNECT_BACKOFF_MIN,
     RESPONSE_WAIT_TIMEOUT,
     SERVICE_CHARACTERISTICS,
-    SERVICE_UUID_TEMP,
     SERVICE_UUIDS,
     TuyaBLECode,
     TuyaBLEDataPointType,
@@ -71,6 +70,10 @@ BLEAK_EXCEPTIONS = (*BLEAK_RETRY_EXCEPTIONS, OSError)
 FD50_DEVICE_INFO_PRODUCT_IDS = frozenset(
     {"jntxv3q4", "9hdajpiw", "2hmqh0ty", "qcrilcpr", "djrqe0q6"}
 )
+
+# TuyaOS FD50 lock with protocol-v4 framing that advertises its negotiated MTU.
+DEVICE_INFO_PAYLOAD_F4_PRODUCT_IDS = frozenset({"dappsdq4"})
+SENSITIVE_DP71_PRODUCT_IDS = frozenset({"dappsdq4"})
 
 # Devices that use legacy key derivation even when the cloud returns a sec_key.
 # This is independent of the FD50 payload quirk: mknd4lci uses standard framing.
@@ -375,6 +378,14 @@ class TuyaBLEDevice:
             self._characteristic_notify == CHARACTERISTIC_NOTIFY_FD50
             and self.product_id in FD50_DEVICE_INFO_PRODUCT_IDS
         )
+
+    def _device_info_payload(self) -> bytes:
+        """Return the product-specific DEVICE_INFO payload, if required."""
+        if self.product_id in DEVICE_INFO_PAYLOAD_F4_PRODUCT_IDS:
+            return b"\x00\xf4"
+        if self._requires_fd50_device_info_handshake():
+            return b"\x00\xf3"
+        return b""
 
     def _build_pairing_request(self) -> bytes:
         result = bytearray()
@@ -960,11 +971,7 @@ class TuyaBLEDevice:
                     try:
                         if not await self._send_packet_while_connected(
                             TuyaBLECode.FUN_SENDER_DEVICE_INFO,
-                            (
-                                b"\x00\xf3"
-                                if self._requires_fd50_device_info_handshake()
-                                else bytes(0)
-                            ),
+                            self._device_info_payload(),
                             0,
                             True,
                         ):
@@ -1549,7 +1556,11 @@ class TuyaBLEDevice:
                 self.address,
                 id,
                 type.name,
-                value,
+                (
+                    "<redacted>"
+                    if self.product_id in SENSITIVE_DP71_PRODUCT_IDS and id == 71
+                    else value
+                ),
             )
             self._datapoints._update_from_device(id, timestamp, flags, type, value)
             datapoints.append(self._datapoints[id])
@@ -1860,7 +1871,11 @@ class TuyaBLEDevice:
                 self.address,
                 dp.id,
                 dp.type.name,
-                dp.value,
+                (
+                    "<redacted>"
+                    if self.product_id in SENSITIVE_DP71_PRODUCT_IDS and dp.id == 71
+                    else dp.value
+                ),
             )
             if length_size == 1:
                 data += pack(">BBB", dp.id, int(dp.type.value), len(value))
