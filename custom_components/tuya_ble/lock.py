@@ -50,6 +50,7 @@ LOCAL_UNLOCK_DPS = UNLOCK_METHODS.keys() - {19}
 LOCK_COMMAND_PENDING_TIMEOUT = 5
 # Device event timestamps truncate fractional seconds; never infer relock early.
 LOCAL_UNLOCK_RELOCK_MARGIN = 1
+EVENT_LOCK = "tuya_ble_lock_event"
 
 
 def build_timestamped_unlock_command(ble_unlock_check: str, timestamp: int) -> bytes:
@@ -408,6 +409,15 @@ class TuyaBLEActivityLock(TuyaBLELock):
             self._lock_activity_relock_cancel()
         self._lock_activity_relock_cancel = async_call_later(
             self._hass, remaining, self._lock_activity_relock
+        )
+        self._hass.bus.async_fire(
+            EVENT_LOCK,
+            {
+                "device_id": self._device.device_id,
+                "entity_id": self.entity_id,
+                "method": UNLOCK_METHODS[datapoint.id][1],
+                "user_id": datapoint.value,
+            },
         )
 
     async def async_will_remove_from_hass(self) -> None:

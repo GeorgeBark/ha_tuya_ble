@@ -740,3 +740,28 @@ async def test_restore_subclasses_selected_only_for_supported_product(
     )
     if not uses_restore:
         assert all(type(sensor) is TuyaBLESensor for sensor in sensors)
+
+
+@pytest.mark.parametrize("age,event_count", [(0, 1), (30, 0)])
+async def test_activity_bus_event_preserves_local_attribution(
+    hass: HomeAssistant, activity_lock, age, event_count
+) -> None:
+    """Keep the activity branch's bus API without replaying expired unlocks."""
+    from custom_components.tuya_ble.lock import EVENT_LOCK
+
+    lock, report = activity_lock
+    events = []
+    remove_listener = hass.bus.async_listen(EVENT_LOCK, events.append)
+    report(36, 20)
+    report(33, True)
+    report(12, 1, timestamp=1000 - age)
+    await hass.async_block_till_done()
+    assert len(events) == event_count
+    if events:
+        assert events[0].data == {
+            "device_id": lock.device.device_id,
+            "entity_id": lock.entity_id,
+            "method": "Fingerprint",
+            "user_id": 1,
+        }
+    remove_listener()

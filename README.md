@@ -482,6 +482,9 @@ For programming exposed entities: 'Program' (switch), 'Repeat forever', 'Repeats
 ### Lights Compatibility Note
 Note that some light products are using Bluetooth Mesh protocols and not BLE and so aren't compatible with this integration. That's probably the case if your product isn't at least found (even if non-working) by this integration.
 
+### Smart lock events
+For the `dappsdq4` lock, a local unlock fires the `tuya_ble_lock_event` bus event. Its data contains `device_id`, `entity_id`, `method`, and `user_id`; for example, a fingerprint unlock reports `method: "Fingerprint"` and `user_id: 1`. The event is not added to Logbook separately, preventing duplicate lock entries. Replayed events whose unlock window has expired do not fire this event.
+
 ## Note that the original hasn't been updated in a long time, still, Support original developer @PlusPlus-ua:
 
 I am working on this integration in Ukraine. Our country was subjected to brutal aggression by Russia. The war still continues. The capital of Ukraine - Kyiv, where I live, and many other cities and villages are constantly under threat of rocket attacks. Our air defense forces are doing wonders, but they also need support. So if you want to help the development of this integration, donate some money and I will spend it to support our air defense.
