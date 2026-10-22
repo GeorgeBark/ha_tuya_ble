@@ -20,7 +20,7 @@ from .tuya_ble import TuyaBLEDataPoint, TuyaBLEDevice
 def format_unlock_record(record: dict[str, Any]) -> str:
     """Keep method and credential ID visible alongside an optional person name."""
     source = util.format_unlock_source(record["method"], record["user_id"])
-    if name := record.get("person_name"):
+    if name := record.get("name") or record.get("person_name"):
         return f"{name} · {source}"
     return source
 
@@ -45,16 +45,21 @@ class UnlockActivity:
     method: str
     user_id: int
     timestamp: float
-    person_entity_id: str
-    person_name: str
+    person_entity_id: str | None
+    person_name: str | None
     context: Context
+    name: str | None = None
 
     @property
-    def person_data(self) -> dict[str, str]:
-        return {
-            "person_entity_id": self.person_entity_id,
-            "person_name": self.person_name,
-        }
+    def identity_data(self) -> dict[str, str]:
+        if self.name is not None:
+            return {"name": self.name}
+        if self.person_entity_id is not None and self.person_name is not None:
+            return {
+                "person_entity_id": self.person_entity_id,
+                "person_name": self.person_name,
+            }
+        return {}
 
     @property
     def record(self) -> dict[str, Any]:
@@ -62,7 +67,7 @@ class UnlockActivity:
             "method": self.method,
             "user_id": self.user_id,
             "timestamp": self.timestamp,
-            **self.person_data,
+            **self.identity_data,
         }
 
 
@@ -74,16 +79,29 @@ class LockActivity:
     ) -> None:
         self.hass = hass
         self.device = device
-        self.mappings = {
-            (item["method"], item["user_id"]): item["person_entity_id"]
-            for item in mappings
-            if isinstance(item, dict)
-            and item.get("method") in dict(util.UNLOCK_METHODS.values())
-            and type(item.get("user_id")) is int
-            and 0 <= item["user_id"] <= 999
-            and isinstance(item.get("person_entity_id"), str)
-            and item["person_entity_id"].startswith("person.")
-        }
+        self.mappings: dict[tuple[str, int], dict[str, str]] = {}
+        for item in mappings:
+            if (
+                not isinstance(item, dict)
+                or item.get("method") not in dict(util.UNLOCK_METHODS.values())
+                or type(item.get("user_id")) is not int
+                or not 0 <= item["user_id"] <= 999
+            ):
+                continue
+            person_id = item.get("person_entity_id")
+            name = item.get("name")
+            name = name.strip() if isinstance(name, str) else None
+            if bool(person_id) == bool(name):
+                continue
+            if person_id:
+                if not isinstance(person_id, str) or not person_id.startswith(
+                    "person."
+                ):
+                    continue
+                identity = {"person_entity_id": person_id}
+            else:
+                identity = {"name": name}
+            self.mappings[item["method"], item["user_id"]] = identity
         self._users: dict[str, Any] = {}
         self._unsubscribers = []
         self._batch: list[TuyaBLEDataPoint] | None = None
@@ -170,14 +188,19 @@ class LockActivity:
             if dp.id not in util.UNLOCK_METHODS:
                 continue
             method = util.UNLOCK_METHODS[dp.id][0]
-            person_id = (
-                self.mappings.get((method, dp.value)) if type(dp.value) is int else None
+            identity = (
+                self.mappings.get((method, dp.value), {})
+                if type(dp.value) is int
+                else {}
             )
+            person_id = identity.get("person_entity_id")
+            name = identity.get("name")
             person = self.hass.states.get(person_id) if person_id else None
-            self.has_mapping |= person is not None
+            resolved = person is not None or name is not None
+            self.has_mapping |= resolved
             # Unmapped BLE acknowledgements never update the lock's activity;
             # do not let them advance its replay watermark either.
-            if dp.id == 19 and person is None:
+            if dp.id == 19 and not resolved:
                 continue
             if dp.id == 19 and time.monotonic() < getattr(
                 self.device, "_lock_activity_pending_until", 0.0
@@ -192,21 +215,26 @@ class LockActivity:
             last_timestamp = dp.timestamp
             self._last_timestamp = last_timestamp
             self.latest_report = dp
-            if person is None:
+            if not resolved:
                 continue
             delay_dp = self.device.datapoints[36]
             delay = int(delay_dp.value) if delay_dp else 5
             if not util.is_lock_event_recent(dp.timestamp, delay, time.time()):
                 continue
-            user_id = person.attributes.get("user_id")
+            user_id = person.attributes.get("user_id") if person else None
             user = self._users.get(user_id)
             self.activities[dp.id] = UnlockActivity(
                 method=method,
                 user_id=dp.value,
                 timestamp=dp.timestamp,
                 person_entity_id=person_id,
-                person_name=person.attributes.get("friendly_name") or person_id,
+                person_name=(
+                    (person.attributes.get("friendly_name") or person_id)
+                    if person
+                    else None
+                ),
                 context=Context(user_id=user.id if user and user.is_active else None),
+                name=name,
             )
 
     @property

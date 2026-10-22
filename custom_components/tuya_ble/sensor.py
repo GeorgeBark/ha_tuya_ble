@@ -2914,7 +2914,7 @@ class TuyaBLERestoreSensor(TuyaBLEActivitySensor, RestoreEntity):
                     key: last_state.attributes.get(key)
                     for key in ("method", "user_id", "timestamp")
                 }
-                for key in ("person_entity_id", "person_name"):
+                for key in ("person_entity_id", "person_name", "name"):
                     if key in last_state.attributes:
                         self._attr_extra_state_attributes[key] = last_state.attributes[
                             key

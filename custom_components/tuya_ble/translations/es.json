@@ -735,6 +735,7 @@
         },
         "error": {
             "invalid_lock_user_id": "Introduce un ID entero de usuario de la cerradura entre 0 y 999.",
+            "lock_user_identity_required": "Selecciona una persona o escribe un nombre, pero no ambos.",
             "invalid_unlock_method": "Selecciona un método de apertura compatible.",
             "person_not_found": "Selecciona una entidad de persona existente.",
             "duplicate_lock_user": "Este método e ID ya tienen una asociación. Edita la asociación existente.",
@@ -802,7 +803,7 @@
             },
             "lock_users": {
                 "title": "Usuarios de la cerradura",
-                "description": "Asocia credenciales de la cerradura a personas. Las personas sin usuario de HA aparecen por nombre en la actividad, pero no tienen atribución nativa de usuario en el registro de actividad.",
+                "description": "Asocia credenciales de la cerradura a personas o nombres libres. Los nombres libres y las personas sin usuario de HA aparecen en la actividad sin atribución nativa de usuario en el registro de actividad.",
                 "menu_options": {
                     "lock_user_add": "Añadir asociación",
                     "lock_user_edit": "Editar asociación",
@@ -811,20 +812,22 @@
             },
             "lock_user_add": {
                 "title": "Añadir usuario de la cerradura",
-                "description": "Guardar recarga esta entrada; no modifica las credenciales ni los usuarios de HA.",
+                "description": "Elige exactamente una opción: persona o nombre. Guardar recarga esta entrada; no modifica las credenciales ni los usuarios de HA.",
                 "data": {
                     "method": "Método de apertura",
                     "user_id": "ID de usuario de la cerradura (0–999)",
-                    "person_entity_id": "Persona"
+                    "person_entity_id": "Persona (opcional)",
+                    "name": "Nombre (opcional)"
                 }
             },
             "lock_user_update": {
                 "title": "Editar usuario de la cerradura",
-                "description": "Guardar recarga esta entrada; no modifica las credenciales ni los usuarios de HA.",
+                "description": "Elige exactamente una opción: persona o nombre. Guardar recarga esta entrada; no modifica las credenciales ni los usuarios de HA.",
                 "data": {
                     "method": "Método de apertura",
                     "user_id": "ID de usuario de la cerradura (0–999)",
-                    "person_entity_id": "Persona"
+                    "person_entity_id": "Persona (opcional)",
+                    "name": "Nombre (opcional)"
                 }
             },
             "lock_user_edit": {

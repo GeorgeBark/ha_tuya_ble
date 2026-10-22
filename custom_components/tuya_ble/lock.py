@@ -371,7 +371,7 @@ class TuyaBLEActivityLock(TuyaBLELock):
             "method": method,
             "user_id": user_id,
             "timestamp": timestamp,
-            **(activity.person_data if activity else {}),
+            **(activity.identity_data if activity else {}),
         }
         self._attr_changed_by = format_unlock_record(self._device.last_unlock)
         if activity:
@@ -429,8 +429,8 @@ class TuyaBLEActivityLock(TuyaBLELock):
                 "last_unlock_time": timestamp,
                 **(
                     {
-                        "last_unlock_person_entity_id": activity.person_entity_id,
-                        "last_unlock_person_name": activity.person_name,
+                        f"last_unlock_{key}": value
+                        for key, value in activity.identity_data.items()
                     }
                     if activity
                     else {}
@@ -467,7 +467,7 @@ class TuyaBLEActivityLock(TuyaBLELock):
                 "entity_id": self.entity_id,
                 "method": UNLOCK_METHODS[datapoint.id][1],
                 "user_id": datapoint.value,
-                **(activity.person_data if activity else {}),
+                **(activity.identity_data if activity else {}),
             },
             context=activity.context if activity else None,
         )
@@ -659,7 +659,7 @@ class TuyaBLERestoreLock(TuyaBLEActivityLock, RestoreEntity):
                     "user_id": attributes.get("last_unlock_user_id"),
                     "timestamp": timestamp,
                 }
-                for key in ("person_entity_id", "person_name"):
+                for key in ("person_entity_id", "person_name", "name"):
                     if (value := attributes.get(f"last_unlock_{key}")) is not None:
                         self._lock_activity_last_unlock[f"last_unlock_{key}"] = value
                         record[key] = value

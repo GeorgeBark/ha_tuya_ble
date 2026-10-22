@@ -505,7 +505,7 @@ async def test_malformed_stored_mappings_are_ignored(hass, mapped_lock, bad_entr
     [
         (mapping("unsupported"), "method"),
         (mapping(person="person.missing"), "person_entity_id"),
-        (mapping(person=None), "person_entity_id"),
+        (mapping(person=None), "base"),
     ],
 )
 async def test_mapping_form_rejects_invalid_method_and_person(hass, bad_input, key):

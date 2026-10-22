@@ -257,7 +257,7 @@ class TuyaBLEUnlockEvent(TuyaBLEEvent):
                 {
                     "method": method,
                     "user_id": dp.value,
-                    **(activity.person_data if activity else {}),
+                    **(activity.identity_data if activity else {}),
                 },
             )
             with scoped_activity_context(self, activity.context if activity else None):

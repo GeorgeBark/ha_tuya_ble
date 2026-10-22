@@ -490,14 +490,17 @@ class TuyaBLEOptionsFlow(OptionsFlowWithConfigEntry):
                         min=0, max=999, step=1, mode=NumberSelectorMode.BOX
                     )
                 ),
-                vol.Required(
+                vol.Optional(
                     "person_entity_id",
-                    **(
-                        {"default": defaults["person_entity_id"]}
-                        if "person_entity_id" in defaults
+                    description=(
+                        {"suggested_value": defaults["person_entity_id"]}
+                        if defaults.get("person_entity_id")
                         else {}
                     ),
                 ): EntitySelector(EntitySelectorConfig(domain="person")),
+                vol.Optional(
+                    "name", description={"suggested_value": defaults.get("name", "")}
+                ): TextSelector(),
             }
         )
 
@@ -505,10 +508,15 @@ class TuyaBLEOptionsFlow(OptionsFlowWithConfigEntry):
         methods = dict(util.UNLOCK_METHODS.values())
         choices = {}
         for item in self._lock_users:
-            person = self.hass.states.get(item["person_entity_id"])
-            name = person.attributes.get("friendly_name") if person else None
+            person_id = item.get("person_entity_id")
+            person = self.hass.states.get(person_id) if person_id else None
+            name = (
+                (person.attributes.get("friendly_name") if person else None)
+                or item.get("name")
+                or person_id
+            )
             choices[self._lock_user_key(item)] = (
-                f"{methods[item['method']]} {item['user_id']} → {name or item['person_entity_id']}"
+                f"{methods[item['method']]} {item['user_id']} → {name}"
             )
         return vol.Schema({vol.Required("mapping"): vol.In(choices)})
 
@@ -542,8 +550,12 @@ class TuyaBLEOptionsFlow(OptionsFlowWithConfigEntry):
                 errors["user_id"] = "invalid_lock_user_id"
             if user_input.get("method") not in dict(util.UNLOCK_METHODS.values()):
                 errors["method"] = "invalid_unlock_method"
-            person_id = user_input.get("person_entity_id", "")
-            if (
+            person_id = user_input.get("person_entity_id") or ""
+            name = user_input.get("name", "")
+            name = name.strip() if isinstance(name, str) else ""
+            if bool(person_id) == bool(name):
+                errors["base"] = "lock_user_identity_required"
+            if person_id and (
                 not isinstance(person_id, str)
                 or not person_id.startswith("person.")
                 or self.hass.states.get(person_id) is None
@@ -553,7 +565,9 @@ class TuyaBLEOptionsFlow(OptionsFlowWithConfigEntry):
                 item = {
                     "method": user_input["method"],
                     "user_id": int(number),
-                    "person_entity_id": person_id,
+                    **(
+                        {"person_entity_id": person_id} if person_id else {"name": name}
+                    ),
                 }
                 mappings = [
                     entry
