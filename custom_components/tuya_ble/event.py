@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import logging
+import time
 
 from homeassistant.components.event import (
     EventDeviceClass,
@@ -17,10 +18,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN
+from .util import is_lock_event_recent
 from .devices import TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .tuya_ble import TuyaBLEDevice
 
 _LOGGER = logging.getLogger(__name__)
+TIMESTAMPED_UNLOCK_EVENT_PRODUCT_IDS = frozenset({"dappsdq4"})
 
 
 @dataclass
@@ -31,6 +34,7 @@ class TuyaBLEEventMapping:
     description: EventEntityDescription
     force_add: bool = True
     event_types: list[str] = field(default_factory=list)
+    event_types_by_dp: dict[int, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -73,7 +77,31 @@ mapping: dict[str, TuyaBLECategoryEventMapping] = {
                         event_types=["ring"],
                     )
                 ],
-            )
+            ),
+            "dappsdq4": [
+                TuyaBLEEventMapping(
+                    dp_id=12,
+                    description=EventEntityDescription(key="unlocked"),
+                    event_types=[
+                        "fingerprint",
+                        "password",
+                        "dynamic_password",
+                        "card",
+                        "ble",
+                        "temporary_password",
+                        "phone_remote",
+                    ],
+                    event_types_by_dp={
+                        12: "fingerprint",
+                        13: "password",
+                        14: "dynamic_password",
+                        15: "card",
+                        19: "ble",
+                        55: "temporary_password",
+                        62: "phone_remote",
+                    },
+                ),
+            ],
         }
     ),
 }
@@ -120,10 +148,21 @@ class TuyaBLEEvent(TuyaBLEEntity, EventEntity):
                 update
                 for update in self._coordinator.last_updates
                 if update.id == self._mapping.dp_id
+                or update.id in self._mapping.event_types_by_dp
             ),
             None,
         )
         if dp is None:
+            return
+
+        if method := self._mapping.event_types_by_dp.get(dp.id):
+            if self._device.product_id in TIMESTAMPED_UNLOCK_EVENT_PRODUCT_IDS:
+                auto_lock_time = self._device.datapoints[36]
+                delay = int(auto_lock_time.value) if auto_lock_time else 5
+                if not is_lock_event_recent(dp.timestamp, delay, time.time()):
+                    return
+            self._trigger_event(method, {"method": method, "user_id": dp.value})
+            self.async_write_ha_state()
             return
 
         # Let's see what is the value of the DP
