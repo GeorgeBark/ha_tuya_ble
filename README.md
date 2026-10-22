@@ -275,7 +275,7 @@ See a device marked Experimental you have? We could use real world testing feedb
     <tr>
       <td>8052F66 Smart Lock</td>
       <td><code>dappsdq4</code></td>
-      <td>Experimental. Lock/unlock via DP33, momentary BLE open via DP71, battery, alarm, last-used user IDs, auto-lock delay, volume and double verification.</td>
+      <td>Experimental. Lock and unlock via automatic-lock state, momentary BLE open, battery, alarm, unlock events, auto-lock delay, volume and double verification. DP21 alarms arrive only on the third consecutive failed local attempt, when local entry is blocked for a few minutes; the value identifies the method (for example, <code>wrong_finger</code> or <code>wrong_password</code>) and has no resolved notification. Events are delivered when the lock connects, with their original timestamp.</td>
     </tr>
     <tr>
       <td>Example Product Securosmart lock</td>

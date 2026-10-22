@@ -153,6 +153,9 @@
         "event": {
             "event": {
                 "name": "事件"
+            },
+            "unlocked": {
+                "name": "已解锁"
             }
         },
         "lawn_mower": {
@@ -618,6 +621,9 @@
             },
             "probe_2_temperature": {
                 "name": "探针 2 温度"
+            },
+            "last_unlock": {
+                "name": "上次解锁"
             }
         },
         "switch": {

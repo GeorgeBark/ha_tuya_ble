@@ -153,6 +153,9 @@
         "event": {
             "event": {
                 "name": "Evento"
+            },
+            "unlocked": {
+                "name": "Sbloccato"
             }
         },
         "lawn_mower": {
@@ -618,6 +621,9 @@
             },
             "probe_2_temperature": {
                 "name": "Temperatura sonda 2"
+            },
+            "last_unlock": {
+                "name": "Ultimo sblocco"
             }
         },
         "switch": {
