@@ -2835,6 +2835,10 @@ class TuyaBLEActivitySensor(TuyaBLESensor):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Use the same report snapshot/context even if the lock listener is later."""
+        if self._mapping.last_unlock and not getattr(
+            self._device, "_lock_activity_restored", True
+        ):
+            return
         resolver = (
             get_lock_activity(self._coordinator) if self._mapping.last_unlock else None
         )

@@ -14,6 +14,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from . import util
+from .lock_restore import latest_timestamp
 from .tuya_ble import TuyaBLEDataPoint, TuyaBLEDevice
 
 
@@ -79,6 +80,8 @@ class LockActivity:
     ) -> None:
         self.hass = hass
         self.device = device
+        if device.product_id in util.RESTORE_LOCK_ACTIVITY:
+            device._lock_activity_restored = False
         self.mappings: dict[tuple[str, int], dict[str, str]] = {}
         for item in mappings:
             if (
@@ -171,6 +174,17 @@ class LockActivity:
 
     def prepare(self, updates: list[TuyaBLEDataPoint] | None) -> None:
         """Resolve each batch once, before any consumer changes last_unlock."""
+        if not getattr(self.device, "_lock_activity_restored", True):
+            self.activities = {}
+            self.latest_report = None
+            self.has_mapping = False
+            return
+        record = getattr(self.device, "last_unlock", None)
+        self._last_timestamp = latest_timestamp(
+            self._last_timestamp,
+            getattr(self.device, "_lock_activity_watermark", None),
+            record.get("timestamp") if record else None,
+        )
         if updates is self._batch:
             return
         self._batch = updates
@@ -180,10 +194,6 @@ class LockActivity:
         if not updates:
             return
         last_timestamp = self._last_timestamp
-        if record := getattr(self.device, "last_unlock", None):
-            restored_time = record.get("timestamp")
-            if isinstance(restored_time, (int, float)):
-                last_timestamp = max(last_timestamp or restored_time, restored_time)
         for dp in sorted(updates, key=lambda update: update.timestamp):
             if dp.id not in util.UNLOCK_METHODS:
                 continue

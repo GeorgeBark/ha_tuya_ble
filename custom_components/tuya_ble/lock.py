@@ -492,6 +492,8 @@ class TuyaBLEActivityLock(TuyaBLELock):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Record local unlock reports before refreshing state."""
+        if not getattr(self._device, "_lock_activity_restored", True):
+            return
         resolver = get_lock_activity(self._coordinator)
         if resolver and resolver.publish_ordered_update("lock"):
             return

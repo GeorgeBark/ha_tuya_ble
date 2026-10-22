@@ -239,6 +239,8 @@ class TuyaBLEUnlockEvent(TuyaBLEEvent):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Refresh availability without inventing or replacing a restored event."""
+        if not getattr(self._device, "_lock_activity_restored", True):
+            return
         resolver = get_lock_activity(self._coordinator)
         if resolver and resolver.publish_ordered_update("unlocked"):
             return
