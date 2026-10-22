@@ -141,8 +141,8 @@ See a device marked Experimental you have? We could use real world testing feedb
       <td>—</td>
     </tr>
     <tr>
-      <td rowspan="27"><strong>Smart Locks</strong></td>
-      <td rowspan="27"><code>ms</code>, <code>jtmspro</code></td>
+      <td rowspan="28"><strong>Smart Locks</strong></td>
+      <td rowspan="28"><code>ms</code>, <code>jtmspro</code></td>
       <td>Smart Lock</td>
       <td><code>ludzroix</code>, <code>isk2p555</code>, <code>gumrixyt</code>, <code>uamrw6h3</code>, <code>sidhzylo</code>, <code>mqc2hevy</code>, <code>7a4xvbtt</code></td>
       <td>—</td>
@@ -271,6 +271,11 @@ See a device marked Experimental you have? We could use real world testing feedb
       <td>Smart Lock C-014S</td>
       <td><code>djrqe0q6</code></td>
       <td>Experimental. BLE unlock via DP71, lock via DP46, state from DP47 (no separate unlock button; the lock entity covers it). FD50 device-info handshake enabled. Battery, alarm, unlock-method counters, auto-lock, volume, double verification and doorbell exposed.</td>
+    </tr>
+    <tr>
+      <td>8052F66 Smart Lock</td>
+      <td><code>dappsdq4</code></td>
+      <td>Experimental. Lock and unlock via automatic-lock state, momentary BLE open, battery, alarm, unlock events, auto-lock delay, volume and double verification. DP21 alarms arrive only on the third consecutive failed local attempt, when local entry is blocked for a few minutes; the value identifies the method (for example, <code>wrong_finger</code> or <code>wrong_password</code>) and has no resolved notification. Events are delivered when the lock connects, with their original timestamp.</td>
     </tr>
     <tr>
       <td>Example Product Securosmart lock</td>
