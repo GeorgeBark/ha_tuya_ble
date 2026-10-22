@@ -42,13 +42,14 @@ from .const import (
     PARKSIDE_MOWER_STATUSES,
     PARKSIDE_MOWER_WARNINGS,
 )
-from .dappsdq4 import DAPP_SDQ4_LAST_UNLOCK_UPDATED, format_dappsdq4_unlock
+from .util import LAST_UNLOCK_UPDATED, format_unlock_source
 from .devices import TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .tuya_ble import TuyaBLEDataPointType, TuyaBLEDevice
 
 _LOGGER = logging.getLogger(__name__)
 SIGNAL_STRENGTH_DP_ID = -1
-DAPP_SDQ4_LAST_UNLOCK_DP_ID = -2
+LAST_UNLOCK_DP_ID = -2
+INTEGER_USER_ID_PRODUCT_IDS = frozenset({"dappsdq4"})
 TuyaBLESensorIsAvailable = Callable[["TuyaBLESensor", TuyaBLEProductInfo], bool] | None
 
 
@@ -66,7 +67,7 @@ class TuyaBLESensorMapping:
     is_available: TuyaBLESensorIsAvailable = None
     restore_value: bool = False
     last_unlock: bool = False
-    dappsdq4_alarm: bool = False
+    timestamped_alarm: bool = False
 
 
 @dataclass
@@ -122,40 +123,40 @@ def bstuokey_battery_getter(self: TuyaBLESensor) -> None:
         }.get(datapoint.value)
 
 
-def dappsdq4_last_unlock_getter(self: TuyaBLESensor) -> None:
-    """Expose the dappsdq4 lock's most recent unlock source."""
-    if record := getattr(self._device, "dappsdq4_last_unlock", None):
-        self._attr_native_value = format_dappsdq4_unlock(
+def last_unlock_getter(self: TuyaBLESensor) -> None:
+    """Expose the timestamped lock's most recent unlock source."""
+    if record := getattr(self._device, "last_unlock", None):
+        self._attr_native_value = format_unlock_source(
             record["method"], record["user_id"]
         )
         self._attr_extra_state_attributes = record
 
 
-def dappsdq4_battery_getter(self: TuyaBLESensor) -> None:
-    """Expose the dappsdq4 battery percentage as an integer."""
+def integer_battery_getter(self: TuyaBLESensor) -> None:
+    """Expose the timestamped battery percentage as an integer."""
     datapoint = self._device.datapoints[8]
     if datapoint:
         self._attr_native_value = int(datapoint.value)
 
 
-def dappsdq4_alarm_getter(self: TuyaBLESensor) -> None:
-    """Handle dappsdq4 alarm reports without accepting invalid enum values."""
+def timestamped_alarm_getter(self: TuyaBLESensor) -> None:
+    """Handle timestamped alarm reports without accepting invalid enum values."""
     datapoint = self._device.datapoints[21]
     if not datapoint:
         return
-    if datapoint.timestamp <= self._dappsdq4_last_timestamp:
+    if datapoint.timestamp <= self._lock_activity_last_timestamp:
         return
     options = self.entity_description.options or []
     if not isinstance(datapoint.value, int) or not 0 <= datapoint.value < len(options):
         _LOGGER.debug(
-            "%s: Ignoring unsupported dappsdq4 alarm value %s",
+            "%s: Ignoring unsupported lock alarm value %s",
             self._device.address,
             datapoint.value,
         )
         return
     self._attr_native_value = options[datapoint.value]
     self._attr_extra_state_attributes = {"timestamp": datapoint.timestamp}
-    self._dappsdq4_last_timestamp = datapoint.timestamp
+    self._lock_activity_last_timestamp = datapoint.timestamp
 
 
 # The Parkside mower reports its logs, schedules and zones as raw datapoints.
@@ -717,14 +718,14 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         suggested_display_precision=0,
                         entity_category=EntityCategory.DIAGNOSTIC,
                     ),
-                    getter=dappsdq4_battery_getter,
+                    getter=integer_battery_getter,
                 ),
                 TuyaBLESensorMapping(
-                    dp_id=DAPP_SDQ4_LAST_UNLOCK_DP_ID,
+                    dp_id=LAST_UNLOCK_DP_ID,
                     description=SensorEntityDescription(
                         key="last_unlock", icon="mdi:lock-open-variant"
                     ),
-                    getter=dappsdq4_last_unlock_getter,
+                    getter=last_unlock_getter,
                     restore_value=True,
                     last_unlock=True,
                 ),
@@ -753,8 +754,8 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         entity_registry_enabled_default=False,
                     ),
                     restore_value=True,
-                    getter=dappsdq4_alarm_getter,
-                    dappsdq4_alarm=True,
+                    getter=timestamped_alarm_getter,
+                    timestamped_alarm=True,
                 ),
                 TuyaBLESensorMapping(
                     dp_id=12,
@@ -2725,7 +2726,7 @@ class TuyaBLESensor(TuyaBLEEntity, RestoreEntity, SensorEntity):
         super().__init__(hass, coordinator, device, product, mapping.description)
         self._mapping = mapping
         self._last_unlock_unsub: Callable[[], None] | None = None
-        self._dappsdq4_last_timestamp = 0.0
+        self._lock_activity_last_timestamp = 0.0
 
     async def async_added_to_hass(self) -> None:
         """Restore the last event-like value until the lock reports again."""
@@ -2741,16 +2742,14 @@ class TuyaBLESensor(TuyaBLEEntity, RestoreEntity, SensorEntity):
                 }
                 timestamp = self._attr_extra_state_attributes["timestamp"]
                 if isinstance(timestamp, (int, float)):
-                    self._device.dappsdq4_last_unlock = (
-                        self._attr_extra_state_attributes.copy()
-                    )
-            elif self._mapping.dappsdq4_alarm:
+                    self._device.last_unlock = self._attr_extra_state_attributes.copy()
+            elif self._mapping.timestamped_alarm:
                 options = self.entity_description.options or []
                 if last_state.state in options:
                     self._attr_native_value = last_state.state
                 timestamp = last_state.attributes.get("timestamp")
                 if isinstance(timestamp, (int, float)):
-                    self._dappsdq4_last_timestamp = timestamp
+                    self._lock_activity_last_timestamp = timestamp
             else:
                 try:
                     self._attr_native_value = int(last_state.state)
@@ -2758,11 +2757,11 @@ class TuyaBLESensor(TuyaBLEEntity, RestoreEntity, SensorEntity):
                     pass
         if self._mapping.last_unlock:
             self._last_unlock_unsub = self._hass.bus.async_listen(
-                DAPP_SDQ4_LAST_UNLOCK_UPDATED, self._handle_last_unlock_update
+                LAST_UNLOCK_UPDATED, self._handle_last_unlock_update
             )
 
     async def async_will_remove_from_hass(self) -> None:
-        """Unsubscribe from the dappsdq4 internal unlock update signal."""
+        """Unsubscribe from the timestamped internal unlock update signal."""
         if self._last_unlock_unsub:
             self._last_unlock_unsub()
             self._last_unlock_unsub = None
@@ -2802,7 +2801,7 @@ class TuyaBLESensor(TuyaBLEEntity, RestoreEntity, SensorEntity):
                             self._attr_icon = self._mapping.icons[datapoint.value]
                 elif datapoint.type == TuyaBLEDataPointType.DT_VALUE:
                     if (
-                        self._device.product_id == "dappsdq4"
+                        self._device.product_id in INTEGER_USER_ID_PRODUCT_IDS
                         and self._mapping.restore_value
                     ):
                         self._attr_native_value = int(datapoint.value)

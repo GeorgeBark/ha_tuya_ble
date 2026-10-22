@@ -60,7 +60,7 @@ from .const import (
     TUYA_RESPONSE_SUCCESS,
 )
 from .mobile import get_mobile_endpoint
-from .tuya_ble.security import decode_dappsdq4_ble_unlock_check
+from .tuya_ble.security import decode_timestamped_ble_unlock_check
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ BLE_UNLOCK_CHECK_STATUS_PRODUCT_IDS = frozenset({"dappsdq4"})
 
 
 def extract_ble_unlock_check(status_values: Any) -> str | None:
-    """Extract the validated dappsdq4 secret from a Tuya status response."""
+    """Extract the validated lock secret from a Tuya status response."""
     if not isinstance(status_values, list):
         return None
     for status_value in status_values:
@@ -77,7 +77,7 @@ def extract_ble_unlock_check(status_values: Any) -> str | None:
             continue
         value = status_value.get("value")
         if isinstance(value, str):
-            decode_dappsdq4_ble_unlock_check(value)
+            decode_timestamped_ble_unlock_check(value)
             return value
         break
     return None
@@ -283,7 +283,7 @@ class HASSTuyaBLEDeviceManager(AbstaractTuyaBLEDeviceManager):
                                     )
                                 except ValueError:
                                     _LOGGER.warning(
-                                        "Invalid dappsdq4 BLE unlock check from Tuya cloud"
+                                        "Invalid timestamped BLE unlock check from Tuya cloud"
                                     )
                                 else:
                                     if value:

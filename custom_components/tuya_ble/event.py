@@ -18,11 +18,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN
-from .dappsdq4 import is_dappsdq4_event_recent
+from .util import is_lock_event_recent
 from .devices import TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .tuya_ble import TuyaBLEDevice
 
 _LOGGER = logging.getLogger(__name__)
+TIMESTAMPED_UNLOCK_EVENT_PRODUCT_IDS = frozenset({"dappsdq4"})
 
 
 @dataclass
@@ -155,10 +156,10 @@ class TuyaBLEEvent(TuyaBLEEntity, EventEntity):
             return
 
         if method := self._mapping.event_types_by_dp.get(dp.id):
-            if self._device.product_id == "dappsdq4":
+            if self._device.product_id in TIMESTAMPED_UNLOCK_EVENT_PRODUCT_IDS:
                 auto_lock_time = self._device.datapoints[36]
                 delay = int(auto_lock_time.value) if auto_lock_time else 5
-                if not is_dappsdq4_event_recent(dp.timestamp, delay, time.time()):
+                if not is_lock_event_recent(dp.timestamp, delay, time.time()):
                     return
             self._trigger_event(method, {"method": method, "user_id": dp.value})
             self.async_write_ha_state()

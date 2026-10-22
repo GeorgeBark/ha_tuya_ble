@@ -80,7 +80,7 @@ from .const import (
 )
 from .devices import get_device_readable_name
 from .cloud import HASSTuyaBLEDeviceManager, TuyaMobileIdentityMismatch
-from .tuya_ble.security import decode_dappsdq4_ble_unlock_check
+from .tuya_ble.security import decode_timestamped_ble_unlock_check
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -355,7 +355,7 @@ def _validate_manual(
         errors[CONF_CATEGORY] = "invalid_category"
     if ble_unlock_check:
         try:
-            decode_dappsdq4_ble_unlock_check(ble_unlock_check)
+            decode_timestamped_ble_unlock_check(ble_unlock_check)
         except ValueError:
             errors[CONF_BLE_UNLOCK_CHECK] = "invalid_ble_unlock_check"
     if errors:

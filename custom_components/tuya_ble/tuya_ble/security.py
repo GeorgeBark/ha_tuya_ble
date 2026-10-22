@@ -69,8 +69,8 @@ class TuyaBLESecurityMaterial:
         return 15 if self.protocol_v2 else 5
 
 
-def decode_dappsdq4_ble_unlock_check(value: str) -> bytes:
-    """Validate and decode dappsdq4's cloud-provided BLE unlock check."""
+def decode_timestamped_ble_unlock_check(value: str) -> bytes:
+    """Validate and decode timestamped cloud-provided BLE unlock check."""
     try:
         payload = base64.b64decode(value, validate=True)
     except (ValueError, TypeError) as err:
@@ -83,5 +83,5 @@ def decode_dappsdq4_ble_unlock_check(value: str) -> bytes:
         or payload[12] != 1
         or payload[17:] != b"\x00\x00"
     ):
-        raise ValueError("ble_unlock_check has an invalid dappsdq4 format")
+        raise ValueError("ble_unlock_check has an invalid timestamped lock format")
     return payload

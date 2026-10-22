@@ -74,6 +74,7 @@ FD50_DEVICE_INFO_PRODUCT_IDS = frozenset(
 
 # TuyaOS FD50 lock with protocol-v4 framing that advertises its negotiated MTU.
 DEVICE_INFO_PAYLOAD_F4_PRODUCT_IDS = frozenset({"dappsdq4"})
+SENSITIVE_DP71_PRODUCT_IDS = frozenset({"dappsdq4"})
 
 # Devices that use legacy key derivation even when the cloud returns a sec_key.
 # This is independent of the FD50 payload quirk: mknd4lci uses standard framing.
@@ -1556,7 +1557,11 @@ class TuyaBLEDevice:
                 self.address,
                 id,
                 type.name,
-                "<redacted>" if self.product_id == "dappsdq4" and id == 71 else value,
+                (
+                    "<redacted>"
+                    if self.product_id in SENSITIVE_DP71_PRODUCT_IDS and id == 71
+                    else value
+                ),
             )
             self._datapoints._update_from_device(id, timestamp, flags, type, value)
             datapoints.append(self._datapoints[id])
@@ -1869,7 +1874,7 @@ class TuyaBLEDevice:
                 dp.type.name,
                 (
                     "<redacted>"
-                    if self.product_id == "dappsdq4" and dp.id == 71
+                    if self.product_id in SENSITIVE_DP71_PRODUCT_IDS and dp.id == 71
                     else dp.value
                 ),
             )
