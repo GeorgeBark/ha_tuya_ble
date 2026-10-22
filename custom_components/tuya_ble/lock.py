@@ -80,14 +80,16 @@ async def async_setup_entry(
                 )
             ):
                 lock_class = TuyaBLEActivityLock
-        entity = lock_class(hass, data.coordinator, data.device, product)
-        if (
-            data.device.category in util.LOCK_CATEGORIES
-            and data.device.product_id in util.LOCAL_UNLOCK_WINDOW
-        ):
-            entity._report_momentary_releases_as_open = (
-                entry.options.get(CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN, False) is True
+        lock_options = {}
+        if lock_class is not TuyaBLELock:
+            lock_options["report_momentary_releases_as_open"] = (
+                data.device.product_id in util.LOCAL_UNLOCK_WINDOW
+                and entry.options.get(CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN, False)
+                is True
             )
+        entity = lock_class(
+            hass, data.coordinator, data.device, product, **lock_options
+        )
         async_add_entities([entity])
 
 
@@ -280,9 +282,11 @@ class TuyaBLEActivityLock(TuyaBLELock):
         coordinator: TuyaBLECoordinator,
         device: TuyaBLEDevice,
         product: TuyaBLEProductInfo,
+        *,
+        report_momentary_releases_as_open: bool = False,
     ) -> None:
         super().__init__(hass, coordinator, device, product)
-        self._report_momentary_releases_as_open = False
+        self._report_momentary_releases_as_open = report_momentary_releases_as_open
         if device.product_id in util.DEVICE_NAMED_LOCK:
             self.entity_description = LockEntityDescription(key="lock", name=None)
         self._lock_activity_unlock_until = 0.0
@@ -446,7 +450,7 @@ class TuyaBLEActivityLock(TuyaBLELock):
         """Optionally distinguish a brief handle release from passage mode."""
         if not self._use_open_state:
             return super().is_open
-        return self._is_recently_unlocked()
+        return super().is_locked is True and self._is_recently_unlocked()
 
     @property
     def _use_open_state(self) -> bool:

@@ -177,7 +177,7 @@ async def test_reconnect_snapshot_does_not_close_open_window(make_open_lock):
 
 
 @pytest.mark.parametrize("source", ["local", "ha"])
-async def test_release_in_passage_mode_is_open_until_real_relock(
+async def test_passage_mode_stays_unlocked_through_release_until_real_relock(
     make_open_lock, source
 ):
     device, coordinator, entity, _, _ = await make_open_lock(True)
@@ -189,11 +189,54 @@ async def test_release_in_passage_mode_is_open_until_real_relock(
             report(device, coordinator, [entity], 12, 7)
         else:
             await entity.async_open()
-        assert entity.state == LockState.OPEN
+        assert entity.state == LockState.UNLOCKED
+        assert entity.is_open is False
         assert entity.is_locked is False
-    report(device, coordinator, [entity], 33, True)
+    changed_by = entity.changed_by
+    last_unlock = device.last_unlock.copy()
+    # Neither the active release window nor its expiry may insert Open into
+    # Unlock HA -> fingerprint -> DP33=true, even with a delayed mode report.
+    for now in (519, 520, 522):
+        with patch("time.monotonic", return_value=now):
+            assert entity.state == LockState.UNLOCKED
+            assert entity.is_open is False
+    report(device, coordinator, [entity], 33, True, timestamp=1022)
     assert entity.state == LockState.LOCKED
     assert entity._lock_activity_relock_cancel is None
+    assert entity.changed_by == changed_by
+    assert device.last_unlock == last_unlock
+
+
+@pytest.mark.parametrize(
+    "lock_class", [lock.TuyaBLEActivityLock, lock.TuyaBLERestoreLock]
+)
+@pytest.mark.parametrize("enabled", [None, False, True])
+async def test_open_option_is_a_constructor_argument(
+    make_entities, lock_class, enabled
+):
+    device, coordinator, original, _, _ = await make_entities("dappsdq4")
+    options = {} if enabled is None else {"report_momentary_releases_as_open": enabled}
+    entity = lock_class(
+        original._hass, coordinator, device, original._product, **options
+    )
+    entity.async_write_ha_state = Mock()
+    try:
+        report(device, coordinator, [entity], 33, True)
+        report(device, coordinator, [entity], 12, 7)
+        with patch("time.monotonic", return_value=500):
+            assert entity.state == (LockState.OPEN if enabled else LockState.UNLOCKED)
+    finally:
+        await entity.async_will_remove_from_hass()
+
+
+async def test_open_requires_confirmed_automatic_lock_mode(make_open_lock):
+    device, coordinator, entity, _, _ = await make_open_lock(True)
+    report(device, coordinator, [entity], 12, 7)
+    with patch("time.monotonic", return_value=500):
+        assert entity.is_open is False
+        assert entity.is_locked is None
+        report(device, coordinator, [entity], 33, True)
+        assert entity.state == LockState.OPEN
 
 
 @pytest.mark.parametrize("command", ["async_lock", "async_unlock"])
