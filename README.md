@@ -275,7 +275,7 @@ See a device marked Experimental you have? We could use real world testing feedb
     <tr>
       <td>8052F66 Smart Lock</td>
       <td><code>dappsdq4</code></td>
-      <td>Experimental. Lock and unlock via automatic-lock state, momentary BLE open, battery, alarm, unlock events, auto-lock delay, volume and double verification.</td>
+      <td>Experimental. Lock and unlock via automatic-lock state, momentary BLE open, battery, alarm, unlock events, auto-lock delay, volume and double verification. DP21 alarms arrive only on the third consecutive failed local attempt, when local entry is blocked for a few minutes; the value identifies the method (for example, <code>wrong_finger</code> or <code>wrong_password</code>) and has no resolved notification. Events are delivered when the lock connects, with their original timestamp.</td>
     </tr>
     <tr>
       <td>Example Product Securosmart lock</td>
@@ -481,9 +481,6 @@ For programming exposed entities: 'Program' (switch), 'Repeat forever', 'Repeats
 
 ### Lights Compatibility Note
 Note that some light products are using Bluetooth Mesh protocols and not BLE and so aren't compatible with this integration. That's probably the case if your product isn't at least found (even if non-working) by this integration.
-
-### Smart lock events
-For the `dappsdq4` lock, a local unlock fires the `tuya_ble_lock_event` bus event. Its data contains `device_id`, `entity_id`, `method`, and `user_id`; for example, a fingerprint unlock reports `method: "Fingerprint"` and `user_id: 1`. The event is not added to Logbook separately, preventing duplicate lock entries.
 
 ## Note that the original hasn't been updated in a long time, still, Support original developer @PlusPlus-ua:
 

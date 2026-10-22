@@ -66,6 +66,7 @@ class TuyaBLESensorMapping:
     is_available: TuyaBLESensorIsAvailable = None
     restore_value: bool = False
     last_unlock: bool = False
+    dappsdq4_alarm: bool = False
 
 
 @dataclass
@@ -128,6 +129,33 @@ def dappsdq4_last_unlock_getter(self: TuyaBLESensor) -> None:
             record["method"], record["user_id"]
         )
         self._attr_extra_state_attributes = record
+
+
+def dappsdq4_battery_getter(self: TuyaBLESensor) -> None:
+    """Expose the dappsdq4 battery percentage as an integer."""
+    datapoint = self._device.datapoints[8]
+    if datapoint:
+        self._attr_native_value = int(datapoint.value)
+
+
+def dappsdq4_alarm_getter(self: TuyaBLESensor) -> None:
+    """Handle dappsdq4 alarm reports without accepting invalid enum values."""
+    datapoint = self._device.datapoints[21]
+    if not datapoint:
+        return
+    if datapoint.timestamp <= self._dappsdq4_last_timestamp:
+        return
+    options = self.entity_description.options or []
+    if not isinstance(datapoint.value, int) or not 0 <= datapoint.value < len(options):
+        _LOGGER.debug(
+            "%s: Ignoring unsupported dappsdq4 alarm value %s",
+            self._device.address,
+            datapoint.value,
+        )
+        return
+    self._attr_native_value = options[datapoint.value]
+    self._attr_extra_state_attributes = {"timestamp": datapoint.timestamp}
+    self._dappsdq4_last_timestamp = datapoint.timestamp
 
 
 # The Parkside mower reports its logs, schedules and zones as raw datapoints.
@@ -689,6 +717,7 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         suggested_display_precision=0,
                         entity_category=EntityCategory.DIAGNOSTIC,
                     ),
+                    getter=dappsdq4_battery_getter,
                 ),
                 TuyaBLESensorMapping(
                     dp_id=DAPP_SDQ4_LAST_UNLOCK_DP_ID,
@@ -724,6 +753,8 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         entity_registry_enabled_default=False,
                     ),
                     restore_value=True,
+                    getter=dappsdq4_alarm_getter,
+                    dappsdq4_alarm=True,
                 ),
                 TuyaBLESensorMapping(
                     dp_id=12,
@@ -2694,6 +2725,7 @@ class TuyaBLESensor(TuyaBLEEntity, RestoreEntity, SensorEntity):
         super().__init__(hass, coordinator, device, product, mapping.description)
         self._mapping = mapping
         self._last_unlock_unsub: Callable[[], None] | None = None
+        self._dappsdq4_last_timestamp = 0.0
 
     async def async_added_to_hass(self) -> None:
         """Restore the last event-like value until the lock reports again."""
@@ -2707,8 +2739,18 @@ class TuyaBLESensor(TuyaBLEEntity, RestoreEntity, SensorEntity):
                     key: last_state.attributes.get(key)
                     for key in ("method", "user_id", "timestamp")
                 }
-            elif self._mapping.dp_id == 21:
-                self._attr_native_value = last_state.state
+                timestamp = self._attr_extra_state_attributes["timestamp"]
+                if isinstance(timestamp, (int, float)):
+                    self._device.dappsdq4_last_unlock = (
+                        self._attr_extra_state_attributes.copy()
+                    )
+            elif self._mapping.dappsdq4_alarm:
+                options = self.entity_description.options or []
+                if last_state.state in options:
+                    self._attr_native_value = last_state.state
+                timestamp = last_state.attributes.get("timestamp")
+                if isinstance(timestamp, (int, float)):
+                    self._dappsdq4_last_timestamp = timestamp
             else:
                 try:
                     self._attr_native_value = int(last_state.state)

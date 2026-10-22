@@ -15,10 +15,19 @@ DAPP_SDQ4_UNLOCK_METHODS: Final = {
     55: ("temporary_password", "Temporary password"),
     62: ("phone_remote", "Phone remote"),
 }
+DAPP_SDQ4_HOME_ASSISTANT_METHOD: Final = "home_assistant"
 
 
 def format_dappsdq4_unlock(method: str, user_id: int | None) -> str:
     """Format a dappsdq4 unlock source consistently across entities."""
-    if method == "Home Assistant":
-        return method
+    if method == DAPP_SDQ4_HOME_ASSISTANT_METHOD:
+        return "Home Assistant"
+    for identifier, label in DAPP_SDQ4_UNLOCK_METHODS.values():
+        if identifier == method:
+            return f"{label} {user_id}"
     return f"{method} {user_id}"
+
+
+def is_dappsdq4_event_recent(timestamp: float, auto_lock_time: int, now: float) -> bool:
+    """Return whether a lock event is fresh enough to represent a new action."""
+    return timestamp >= now - (auto_lock_time + 10)

@@ -14,12 +14,15 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import DOMAIN, DPCode
 from .dappsdq4 import (
     DAPP_SDQ4_LAST_UNLOCK_UPDATED,
+    DAPP_SDQ4_HOME_ASSISTANT_METHOD,
     DAPP_SDQ4_UNLOCK_METHODS,
     format_dappsdq4_unlock,
+    is_dappsdq4_event_recent,
 )
 from .devices import (
     TuyaBLEData,
@@ -39,7 +42,6 @@ DAPP_SDQ4_PRODUCT_IDS = frozenset({"dappsdq4"})
 DAPP_SDQ4_UNLOCK_DPS = frozenset({12, 13, 14, 15, 19, 55, 62})
 DAPP_SDQ4_LOCAL_UNLOCK_DPS = DAPP_SDQ4_UNLOCK_DPS - {19}
 DAPP_SDQ4_PENDING_TIMEOUT = 5
-EVENT_LOCK = "tuya_ble_lock_event"
 
 
 def build_dappsdq4_unlock_command(ble_unlock_check: str, timestamp: int) -> bytes:
@@ -66,7 +68,7 @@ async def async_setup_entry(
         async_add_entities([TuyaBLELock(hass, data.coordinator, data.device, product)])
 
 
-class TuyaBLELock(TuyaBLEEntity, LockEntity):
+class TuyaBLELock(TuyaBLEEntity, RestoreEntity, LockEntity):
     platform = Platform.LOCK
 
     def __init__(
@@ -95,6 +97,26 @@ class TuyaBLELock(TuyaBLEEntity, LockEntity):
         self._dappsdq4_pending_dps: set[int] = set()
         self._dappsdq4_last_unlock: dict[str, Any] = {}
 
+    async def async_added_to_hass(self) -> None:
+        """Restore the most recent local unlock timestamp."""
+        await super().async_added_to_hass()
+        if self._device.product_id not in DAPP_SDQ4_PRODUCT_IDS:
+            return
+        if last_state := await self.async_get_last_state():
+            attributes = last_state.attributes
+            timestamp = attributes.get("last_unlock_time")
+            if isinstance(timestamp, (int, float)):
+                self._dappsdq4_last_unlock = {
+                    "last_unlock_method": attributes.get("last_unlock_method"),
+                    "last_unlock_user_id": attributes.get("last_unlock_user_id"),
+                    "last_unlock_time": timestamp,
+                }
+                self._device.dappsdq4_last_unlock = {
+                    "method": attributes.get("last_unlock_method"),
+                    "user_id": attributes.get("last_unlock_user_id"),
+                    "timestamp": timestamp,
+                }
+
     def _is_dappsdq4_recently_unlocked(self) -> bool:
         return time.monotonic() < self._dappsdq4_unlock_until
 
@@ -118,7 +140,7 @@ class TuyaBLELock(TuyaBLEEntity, LockEntity):
         """Attribute an outgoing command until its report or a short timeout."""
         self._attr_changed_by = "Home Assistant"
         if is_unlock:
-            self._dappsdq4_set_last_unlock("Home Assistant", None, None)
+            self._dappsdq4_set_last_unlock(DAPP_SDQ4_HOME_ASSISTANT_METHOD, None, None)
         self._dappsdq4_pending_dps.add(expected_dp)
         if self._dappsdq4_pending_cancel:
             self._dappsdq4_pending_cancel()
@@ -146,27 +168,28 @@ class TuyaBLELock(TuyaBLEEntity, LockEntity):
         """Hold the lock state open for the configured auto-lock interval."""
         auto_lock_time = self._device.datapoints[36]
         delay = int(auto_lock_time.value) if auto_lock_time else 5
+        timestamp = datapoint.timestamp
+        last_timestamp = self._dappsdq4_last_unlock.get("last_unlock_time")
+        if last_timestamp is None and (
+            last_unlock := getattr(self._device, "dappsdq4_last_unlock", None)
+        ):
+            last_timestamp = last_unlock.get("timestamp")
+        if isinstance(last_timestamp, (int, float)) and timestamp <= last_timestamp:
+            return
+        method_key, _ = DAPP_SDQ4_UNLOCK_METHODS[datapoint.id]
+        self._dappsdq4_last_unlock = {
+            "last_unlock_method": method_key,
+            "last_unlock_user_id": datapoint.value,
+            "last_unlock_time": timestamp,
+        }
+        self._dappsdq4_set_last_unlock(method_key, datapoint.value, timestamp)
+        if not is_dappsdq4_event_recent(timestamp, delay, time.time()):
+            return
         self._dappsdq4_unlock_until = time.monotonic() + delay
         if self._dappsdq4_relock_cancel:
             self._dappsdq4_relock_cancel()
         self._dappsdq4_relock_cancel = async_call_later(
             self._hass, delay, self._dappsdq4_relock
-        )
-        method_key, method = DAPP_SDQ4_UNLOCK_METHODS[datapoint.id]
-        self._dappsdq4_last_unlock = {
-            "last_unlock_method": method_key,
-            "last_unlock_user_id": datapoint.value,
-            "last_unlock_time": datapoint.timestamp,
-        }
-        self._dappsdq4_set_last_unlock(method, datapoint.value, datapoint.timestamp)
-        self._hass.bus.async_fire(
-            EVENT_LOCK,
-            {
-                "device_id": self._device.device_id,
-                "entity_id": self.entity_id,
-                "method": method,
-                "user_id": datapoint.value,
-            },
         )
 
     async def async_will_remove_from_hass(self) -> None:

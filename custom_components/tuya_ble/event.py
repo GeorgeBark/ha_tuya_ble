@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import logging
+import time
 
 from homeassistant.components.event import (
     EventDeviceClass,
@@ -17,6 +18,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN
+from .dappsdq4 import is_dappsdq4_event_recent
 from .devices import TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .tuya_ble import TuyaBLEDevice
 
@@ -153,6 +155,11 @@ class TuyaBLEEvent(TuyaBLEEntity, EventEntity):
             return
 
         if method := self._mapping.event_types_by_dp.get(dp.id):
+            if self._device.product_id == "dappsdq4":
+                auto_lock_time = self._device.datapoints[36]
+                delay = int(auto_lock_time.value) if auto_lock_time else 5
+                if not is_dappsdq4_event_recent(dp.timestamp, delay, time.time()):
+                    return
             self._trigger_event(method, {"method": method, "user_id": dp.value})
             self.async_write_ha_state()
             return

@@ -2,6 +2,7 @@
 
 import base64
 import asyncio
+import time
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -107,7 +108,7 @@ async def test_dappsdq4_lock_uses_dp33_and_open_requires_check(
     from bleak.backends.device import BLEDevice
 
     from custom_components.tuya_ble.devices import TuyaBLECoordinator, TuyaBLEProductInfo
-    from custom_components.tuya_ble.lock import EVENT_LOCK, TuyaBLELock
+    from custom_components.tuya_ble.lock import TuyaBLELock
     from custom_components.tuya_ble.sensor import dappsdq4_last_unlock_getter
     from custom_components.tuya_ble.tuya_ble import (
         TuyaBLEDataPointType,
@@ -137,15 +138,12 @@ async def test_dappsdq4_lock_uses_dp33_and_open_requires_check(
     )
     entity.async_write_ha_state = Mock()
     assert entity.entity_description.name is None
-    events = []
-    hass.bus.async_listen(EVENT_LOCK, events.append)
-
     assert entity.is_locked is None
     await entity.async_unlock()
     assert device.datapoints[33].value is False
     assert entity.changed_by == "Home Assistant"
     assert device.dappsdq4_last_unlock == {
-        "method": "Home Assistant",
+        "method": "home_assistant",
         "user_id": None,
         "timestamp": None,
     }
@@ -174,39 +172,32 @@ async def test_dappsdq4_lock_uses_dp33_and_open_requires_check(
     entity._handle_coordinator_update()
     assert entity.changed_by == "Home Assistant"
 
-    device.datapoints._update_from_device(
-        12, 0x6AD8E2C4, 0, TuyaBLEDataPointType.DT_VALUE, 1
-    )
+    timestamp = int(time.time())
+    device.datapoints._update_from_device(12, timestamp, 0, TuyaBLEDataPointType.DT_VALUE, 1)
     coordinator.last_updates = [device.datapoints[12]]
     entity._handle_coordinator_update()
     assert not entity.is_locked
     assert entity.extra_state_attributes == {
         "last_unlock_method": "fingerprint",
         "last_unlock_user_id": 1,
-        "last_unlock_time": 0x6AD8E2C4,
+        "last_unlock_time": timestamp,
     }
     assert entity.changed_by == "Fingerprint 1"
     assert device.dappsdq4_last_unlock == {
-        "method": "Fingerprint",
+        "method": "fingerprint",
         "user_id": 1,
-        "timestamp": 0x6AD8E2C4,
+        "timestamp": timestamp,
     }
     dappsdq4_last_unlock_getter(last_unlock_sensor)
     assert last_unlock_sensor._attr_native_value == "Fingerprint 1"
     assert last_unlock_sensor._attr_extra_state_attributes == {
-        "method": "Fingerprint",
+        "method": "fingerprint",
         "user_id": 1,
-        "timestamp": 0x6AD8E2C4,
-    }
-    assert events[0].data == {
-        "device_id": "12345678901234567890",
-        "entity_id": entity.entity_id,
-        "method": "Fingerprint",
-        "user_id": 1,
+        "timestamp": timestamp,
     }
 
     device.datapoints._update_from_device(
-        33, 0x6AD8E2C5, 0, TuyaBLEDataPointType.DT_BOOL, True
+        33, timestamp + 1, 0, TuyaBLEDataPointType.DT_BOOL, True
     )
     coordinator.last_updates = [device.datapoints[33]]
     entity._handle_coordinator_update()
@@ -249,8 +240,8 @@ def test_dappsdq4_unlock_formatting_is_shared() -> None:
     """Lock attribution and the aggregate sensor use one stable formatter."""
     from custom_components.tuya_ble.dappsdq4 import format_dappsdq4_unlock
 
-    assert format_dappsdq4_unlock("Fingerprint", 1) == "Fingerprint 1"
-    assert format_dappsdq4_unlock("Home Assistant", None) == "Home Assistant"
+    assert format_dappsdq4_unlock("fingerprint", 1) == "Fingerprint 1"
+    assert format_dappsdq4_unlock("home_assistant", None) == "Home Assistant"
 
 
 async def test_dappsdq4_last_unlock_sensor_restores_state(
@@ -282,7 +273,7 @@ async def test_dappsdq4_last_unlock_sensor_restores_state(
         return_value=State(
             "sensor.last_unlock",
             "Fingerprint 1",
-            {"method": "Fingerprint", "user_id": 1, "timestamp": 1234},
+            {"method": "fingerprint", "user_id": 1, "timestamp": 1234},
         )
     )
     with patch(
@@ -293,8 +284,119 @@ async def test_dappsdq4_last_unlock_sensor_restores_state(
 
     assert sensor.native_value == "Fingerprint 1"
     assert sensor.extra_state_attributes == {
-        "method": "Fingerprint",
+        "method": "fingerprint",
         "user_id": 1,
         "timestamp": 1234,
     }
     await sensor.async_will_remove_from_hass()
+
+
+async def test_dappsdq4_ignores_old_unlock_events(hass: HomeAssistant) -> None:
+    """Replayed reports do not reopen the lock or trigger its event entity."""
+    from bleak.backends.device import BLEDevice
+
+    from custom_components.tuya_ble.devices import TuyaBLECoordinator, TuyaBLEProductInfo
+    from custom_components.tuya_ble.event import TuyaBLEEvent, get_mapping_by_device
+    from custom_components.tuya_ble.lock import TuyaBLELock
+    from custom_components.tuya_ble.tuya_ble import (
+        TuyaBLEDataPointType,
+        TuyaBLEDevice,
+        TuyaBLEDeviceCredentials,
+    )
+
+    device = TuyaBLEDevice(
+        Mock(), BLEDevice(name="lock", address="11:22:33:44:55:66", details="", rssi=-50)
+    )
+    device._device_info = TuyaBLEDeviceCredentials(
+        uuid="uuid1234",
+        local_key="0123456789abcdef",
+        device_id="device",
+        category="jtmspro",
+        product_id="dappsdq4",
+        device_name="8052F66",
+        product_model="",
+        product_name="8052F66",
+        functions=[],
+        status_range=[],
+    )
+    coordinator = TuyaBLECoordinator(hass, device)
+    product = TuyaBLEProductInfo("8052F66 Smart Lock", lock=1)
+    lock = TuyaBLELock(hass, coordinator, device, product)
+    lock.async_write_ha_state = Mock()
+    event = TuyaBLEEvent(
+        hass, coordinator, device, product, get_mapping_by_device(device)[0]
+    )
+    event._trigger_event = Mock()
+    event.async_write_ha_state = Mock()
+    device.datapoints._update_from_device(
+        33, int(time.time()), 0, TuyaBLEDataPointType.DT_BOOL, True
+    )
+
+    device.datapoints._update_from_device(
+        12, int(time.time()) - 16, 0, TuyaBLEDataPointType.DT_VALUE, 1
+    )
+    coordinator.last_updates = [device.datapoints[12]]
+    lock._handle_coordinator_update()
+    event._handle_coordinator_update()
+    assert lock.is_locked
+    event._trigger_event.assert_not_called()
+
+    device.datapoints._update_from_device(
+        12, int(time.time()), 0, TuyaBLEDataPointType.DT_VALUE, 1
+    )
+    coordinator.last_updates = [device.datapoints[12]]
+    lock._handle_coordinator_update()
+    event._handle_coordinator_update()
+    assert not lock.is_locked
+    event._trigger_event.assert_called_once_with(
+        "fingerprint", {"method": "fingerprint", "user_id": 1}
+    )
+    lock._dappsdq4_relock_cancel()
+
+
+async def test_dappsdq4_alarm_and_battery_hardware_values(hass: HomeAssistant) -> None:
+    """Invalid and replayed alarms are safe, while battery remains an integer."""
+    from bleak.backends.device import BLEDevice
+
+    from custom_components.tuya_ble.devices import TuyaBLECoordinator, TuyaBLEProductInfo
+    from custom_components.tuya_ble.sensor import TuyaBLESensor, get_mapping_by_device
+    from custom_components.tuya_ble.tuya_ble import TuyaBLEDataPointType, TuyaBLEDevice
+
+    device = TuyaBLEDevice(
+        Mock(), BLEDevice(name="lock", address="11:22:33:44:55:66", details="", rssi=-50)
+    )
+    device._device_info = Mock(
+        category="jtmspro", product_id="dappsdq4", device_id="device"
+    )
+    coordinator = TuyaBLECoordinator(hass, device)
+    mappings = {mapping.dp_id: mapping for mapping in get_mapping_by_device(device)}
+    product = TuyaBLEProductInfo("8052F66 Smart Lock")
+    alarm = TuyaBLESensor(hass, coordinator, device, product, mappings[21])
+    alarm.async_write_ha_state = Mock()
+    battery = TuyaBLESensor(hass, coordinator, device, product, mappings[8])
+    battery.async_write_ha_state = Mock()
+
+    alarm.async_get_last_state = AsyncMock(
+        return_value=State("sensor.alarm_lock", "unknown")
+    )
+    with patch(
+        "custom_components.tuya_ble.devices.TuyaBLEEntity.async_added_to_hass",
+        new=AsyncMock(),
+    ):
+        await alarm.async_added_to_hass()
+    assert alarm.native_value is None
+
+    device.datapoints._update_from_device(21, 101, 0, TuyaBLEDataPointType.DT_ENUM, 15)
+    alarm._handle_coordinator_update()
+    assert alarm.native_value is None
+    device.datapoints._update_from_device(21, 102, 0, TuyaBLEDataPointType.DT_ENUM, 0)
+    alarm._handle_coordinator_update()
+    assert alarm.native_value == "wrong_finger"
+    device.datapoints._update_from_device(21, 101, 0, TuyaBLEDataPointType.DT_ENUM, 1)
+    alarm._handle_coordinator_update()
+    assert alarm.native_value == "wrong_finger"
+
+    device.datapoints._update_from_device(8, 102, 0, TuyaBLEDataPointType.DT_VALUE, 22)
+    battery._handle_coordinator_update()
+    assert battery.native_value == 22
+    assert isinstance(battery.native_value, int)
