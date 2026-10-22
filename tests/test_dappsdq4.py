@@ -196,6 +196,8 @@ async def test_dappsdq4_lock_uses_dp33_and_open_requires_check(
         "timestamp": timestamp,
     }
 
+    entity._automatic_lock_previous = False
+
     device.datapoints._update_from_device(
         33, timestamp + 1, 0, TuyaBLEDataPointType.DT_BOOL, True
     )
@@ -351,7 +353,36 @@ async def test_dappsdq4_ignores_old_unlock_events(hass: HomeAssistant) -> None:
     event._trigger_event.assert_called_once_with(
         "fingerprint", {"method": "fingerprint", "user_id": 1}
     )
+    device.datapoints._update_from_device(
+        33, int(time.time()), 0, TuyaBLEDataPointType.DT_BOOL, True
+    )
+    coordinator.last_updates = [device.datapoints[33]]
+    lock._handle_coordinator_update()
+    assert not lock.is_locked
+    lock._dappsdq4_last_unlock.clear()
+    device.dappsdq4_last_unlock = None
+    device.datapoints._update_from_device(36, 1000, 0, TuyaBLEDataPointType.DT_VALUE, 20)
+    device.datapoints._update_from_device(12, 995, 0, TuyaBLEDataPointType.DT_VALUE, 1)
+    coordinator.last_updates = [device.datapoints[12]]
+    with patch("time.time", return_value=1000), patch("time.monotonic", return_value=500):
+        lock._handle_coordinator_update()
+    assert lock._dappsdq4_unlock_until == 515
     lock._dappsdq4_relock_cancel()
+
+    lock.async_get_last_state = AsyncMock(return_value=State(
+        "lock.test", "locked", {
+            "changed_by": "Fingerprint 1",
+            "last_unlock_method": "fingerprint",
+            "last_unlock_user_id": 1,
+            "last_unlock_time": 995,
+        }
+    ))
+    with patch("custom_components.tuya_ble.devices.TuyaBLEEntity.async_added_to_hass", new=AsyncMock()):
+        await lock.async_added_to_hass()
+    assert lock.changed_by == "Fingerprint 1"
+    assert lock.extra_state_attributes["last_unlock_time"] == 995
+    assert lock.extra_state_attributes["last_unlock_method"] == "fingerprint"
+    assert lock.extra_state_attributes["last_unlock_user_id"] == 1
 
 
 async def test_dappsdq4_alarm_and_battery_hardware_values(hass: HomeAssistant) -> None:
@@ -400,3 +431,9 @@ async def test_dappsdq4_alarm_and_battery_hardware_values(hass: HomeAssistant) -
     battery._handle_coordinator_update()
     assert battery.native_value == 22
     assert isinstance(battery.native_value, int)
+    last_used = TuyaBLESensor(hass, coordinator, device, product, mappings[12])
+    last_used.async_write_ha_state = Mock()
+    device.datapoints._update_from_device(12, 102, 0, TuyaBLEDataPointType.DT_VALUE, 1)
+    last_used._handle_coordinator_update()
+    assert last_used.native_value == 1
+    assert isinstance(last_used.native_value, int)

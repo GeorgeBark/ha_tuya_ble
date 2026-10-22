@@ -22,7 +22,6 @@ from .dappsdq4 import (
     DAPP_SDQ4_HOME_ASSISTANT_METHOD,
     DAPP_SDQ4_UNLOCK_METHODS,
     format_dappsdq4_unlock,
-    is_dappsdq4_event_recent,
 )
 from .devices import (
     TuyaBLEData,
@@ -96,6 +95,10 @@ class TuyaBLELock(TuyaBLEEntity, RestoreEntity, LockEntity):
         self._dappsdq4_pending_cancel: CALLBACK_TYPE | None = None
         self._dappsdq4_pending_dps: set[int] = set()
         self._dappsdq4_last_unlock: dict[str, Any] = {}
+        automatic_lock = device.datapoints[33]
+        self._automatic_lock_previous = (
+            bool(automatic_lock.value) if automatic_lock else None
+        )
 
     async def async_added_to_hass(self) -> None:
         """Restore the most recent local unlock timestamp."""
@@ -104,6 +107,7 @@ class TuyaBLELock(TuyaBLEEntity, RestoreEntity, LockEntity):
             return
         if last_state := await self.async_get_last_state():
             attributes = last_state.attributes
+            self._attr_changed_by = attributes.get("changed_by")
             timestamp = attributes.get("last_unlock_time")
             if isinstance(timestamp, (int, float)):
                 self._dappsdq4_last_unlock = {
@@ -183,13 +187,14 @@ class TuyaBLELock(TuyaBLEEntity, RestoreEntity, LockEntity):
             "last_unlock_time": timestamp,
         }
         self._dappsdq4_set_last_unlock(method_key, datapoint.value, timestamp)
-        if not is_dappsdq4_event_recent(timestamp, delay, time.time()):
+        remaining = timestamp + delay - time.time()
+        if remaining <= 0:
             return
-        self._dappsdq4_unlock_until = time.monotonic() + delay
+        self._dappsdq4_unlock_until = time.monotonic() + remaining
         if self._dappsdq4_relock_cancel:
             self._dappsdq4_relock_cancel()
         self._dappsdq4_relock_cancel = async_call_later(
-            self._hass, delay, self._dappsdq4_relock
+            self._hass, remaining, self._dappsdq4_relock
         )
 
     async def async_will_remove_from_hass(self) -> None:
@@ -215,10 +220,12 @@ class TuyaBLELock(TuyaBLEEntity, RestoreEntity, LockEntity):
                 if datapoint.id in self._dappsdq4_pending_dps:
                     self._dappsdq4_clear_pending()
                 if datapoint.id == 33:
-                    self._dappsdq4_unlock_until = 0.0
-                    if self._dappsdq4_relock_cancel:
-                        self._dappsdq4_relock_cancel()
-                        self._dappsdq4_relock_cancel = None
+                    if self._automatic_lock_previous is False and datapoint.value:
+                        self._dappsdq4_unlock_until = 0.0
+                        if self._dappsdq4_relock_cancel:
+                            self._dappsdq4_relock_cancel()
+                            self._dappsdq4_relock_cancel = None
+                    self._automatic_lock_previous = bool(datapoint.value)
                 if datapoint.id in DAPP_SDQ4_LOCAL_UNLOCK_DPS:
                     self._dappsdq4_note_unlock(datapoint)
         super()._handle_coordinator_update()
@@ -272,6 +279,7 @@ class TuyaBLELock(TuyaBLEEntity, RestoreEntity, LockEntity):
                 33, TuyaBLEDataPointType.DT_BOOL, True
             )
             await automatic_lock.set_value(True)
+            self._automatic_lock_previous = True
             return
         manual_lock_id = self.find_dpid(DPCode.MANUAL_LOCK)
         if manual_lock_id is not None:
@@ -316,6 +324,7 @@ class TuyaBLELock(TuyaBLEEntity, RestoreEntity, LockEntity):
                 33, TuyaBLEDataPointType.DT_BOOL, False
             )
             await automatic_lock.set_value(False)
+            self._automatic_lock_previous = False
             return
         if self._device.product_id in DP71_RAW_UNLOCK_PRODUCT_IDS:
             # EL605A knob lock: unlock is a DP71 (ble_unlock_check, Raw)

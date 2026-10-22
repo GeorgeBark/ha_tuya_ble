@@ -2801,9 +2801,15 @@ class TuyaBLESensor(TuyaBLEEntity, RestoreEntity, SensorEntity):
                         ):
                             self._attr_icon = self._mapping.icons[datapoint.value]
                 elif datapoint.type == TuyaBLEDataPointType.DT_VALUE:
-                    self._attr_native_value = (
-                        datapoint.value / self._mapping.coefficient
-                    )
+                    if (
+                        self._device.product_id == "dappsdq4"
+                        and self._mapping.restore_value
+                    ):
+                        self._attr_native_value = int(datapoint.value)
+                    else:
+                        self._attr_native_value = (
+                            datapoint.value / self._mapping.coefficient
+                        )
                 else:
                     self._attr_native_value = datapoint.value
         self.async_write_ha_state()
