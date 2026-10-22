@@ -18,6 +18,11 @@ from homeassistant.helpers.event import async_call_later
 
 from .const import DOMAIN, DPCode, CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN
 from . import util
+from .lock_restore import (
+    LockActivityExtraData,
+    latest_timestamp,
+    restore_device_activity,
+)
 from .util import (
     LAST_UNLOCK_UPDATED,
     HOME_ASSISTANT_METHOD,
@@ -371,6 +376,9 @@ class TuyaBLEActivityLock(TuyaBLELock):
             last_unlock := getattr(self._device, "last_unlock", None)
         ):
             last_timestamp = last_unlock.get("timestamp")
+        last_timestamp = latest_timestamp(
+            last_timestamp, getattr(self._device, "_lock_activity_watermark", None)
+        )
         if (
             self._device.product_id in util.TIMESTAMPED_UNLOCK_REPORTS
             and isinstance(last_timestamp, (int, float))
@@ -378,6 +386,10 @@ class TuyaBLEActivityLock(TuyaBLELock):
         ):
             return
         self._lock_activity_last_report_time = timestamp
+        if self._device.product_id in util.RESTORE_LOCK_ACTIVITY:
+            self._device._lock_activity_watermark = latest_timestamp(
+                last_timestamp, timestamp
+            )
         method_key, _ = UNLOCK_METHODS[datapoint.id]
         if self._device.product_id in util.UNLOCK_ATTRIBUTION:
             self._lock_activity_last_unlock = {
@@ -537,21 +549,50 @@ class TuyaBLEActivityLock(TuyaBLELock):
 class TuyaBLERestoreLock(TuyaBLEActivityLock, RestoreEntity):
     """Restore activity, never a transient unlocked state or a pending command."""
 
+    @property
+    def extra_restore_state_data(self) -> LockActivityExtraData:
+        record = getattr(self._device, "last_unlock", None)
+        return LockActivityExtraData(
+            watermark=latest_timestamp(
+                self._lock_activity_last_report_time,
+                self._lock_activity_last_unlock.get("last_unlock_time"),
+                getattr(self._device, "_lock_activity_watermark", None),
+            ),
+            last_unlock=record.copy() if record is not None else None,
+            changed_by=self.changed_by,
+            attributes=self._lock_activity_last_unlock.copy(),
+        )
+
     async def async_added_to_hass(self) -> None:
-        """Restore the most recent local unlock timestamp."""
-        await super().async_added_to_hass()
-        if last_state := await self.async_get_last_state():
+        """Restore the watermark before registering any coordinator listener."""
+        self._device._lock_activity_restored = False
+        extra = await self.async_get_last_extra_data()
+        if extra is not None:
+            if data := LockActivityExtraData.from_dict(extra.as_dict()):
+                self._attr_changed_by = data.changed_by
+                self._lock_activity_last_unlock = data.attributes.copy()
+                self._lock_activity_last_report_time = data.watermark
+                restore_device_activity(
+                    self._device, data.last_unlock, data.watermark, prefer_record=True
+                )
+        elif last_state := await self.async_get_last_state():
             attributes = last_state.attributes
             self._attr_changed_by = attributes.get("changed_by")
             timestamp = attributes.get("last_unlock_time")
-            if isinstance(timestamp, (int, float)):
+            if latest_timestamp(timestamp) is not None:
                 self._lock_activity_last_unlock = {
                     "last_unlock_method": attributes.get("last_unlock_method"),
                     "last_unlock_user_id": attributes.get("last_unlock_user_id"),
                     "last_unlock_time": timestamp,
                 }
-                self._device.last_unlock = {
+                record = {
                     "method": attributes.get("last_unlock_method"),
                     "user_id": attributes.get("last_unlock_user_id"),
                     "timestamp": timestamp,
                 }
+                self._lock_activity_last_report_time = timestamp
+                restore_device_activity(
+                    self._device, record, timestamp, prefer_record=True
+                )
+        self._device._lock_activity_restored = True
+        await super().async_added_to_hass()

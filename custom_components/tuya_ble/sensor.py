@@ -43,6 +43,11 @@ from .const import (
     PARKSIDE_MOWER_WARNINGS,
 )
 from . import util
+from .lock_restore import (
+    LockActivityExtraData,
+    latest_timestamp,
+    restore_device_activity,
+)
 from .util import LAST_UNLOCK_UPDATED, UNLOCK_METHODS, format_unlock_source
 from .devices import TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .tuya_ble import TuyaBLEDataPointType, TuyaBLEDevice
@@ -2831,10 +2836,41 @@ class TuyaBLEActivitySensor(TuyaBLESensor):
 class TuyaBLERestoreSensor(TuyaBLEActivitySensor, RestoreEntity):
     """Restore event-like sensor data without changing ordinary sensors."""
 
+    @property
+    def extra_restore_state_data(self) -> LockActivityExtraData:
+        record = (
+            getattr(self._device, "last_unlock", None)
+            if self._mapping.last_unlock
+            else None
+        )
+        return LockActivityExtraData(
+            watermark=(
+                latest_timestamp(
+                    getattr(self._device, "_lock_activity_watermark", None),
+                    record.get("timestamp") if record else None,
+                )
+                if self._mapping.last_unlock
+                else self._lock_activity_last_timestamp
+            ),
+            last_unlock=record.copy() if record is not None else None,
+            value=self.native_value,
+            attributes=dict(self.extra_state_attributes or {}),
+        )
+
     async def async_added_to_hass(self) -> None:
         """Restore the last event-like value until the lock reports again."""
-        await super().async_added_to_hass()
-        if self._mapping.restore_value and (
+        extra = await self.async_get_last_extra_data()
+        if extra is not None:
+            if data := LockActivityExtraData.from_dict(extra.as_dict()):
+                self._attr_native_value = data.value
+                self._attr_extra_state_attributes = data.attributes.copy()
+                if self._mapping.last_unlock:
+                    restore_device_activity(
+                        self._device, data.last_unlock, data.watermark
+                    )
+                elif self._mapping.timestamped_alarm:
+                    self._lock_activity_last_timestamp = data.watermark or 0.0
+        elif self._mapping.restore_value and (
             last_state := await self.async_get_last_state()
         ):
             if self._mapping.last_unlock:
@@ -2845,7 +2881,9 @@ class TuyaBLERestoreSensor(TuyaBLEActivitySensor, RestoreEntity):
                 }
                 timestamp = self._attr_extra_state_attributes["timestamp"]
                 if isinstance(timestamp, (int, float)):
-                    self._device.last_unlock = self._attr_extra_state_attributes.copy()
+                    restore_device_activity(
+                        self._device, self._attr_extra_state_attributes, timestamp
+                    )
             elif self.entity_description.options is not None:
                 options = self.entity_description.options or []
                 if last_state.state in options:
@@ -2865,6 +2903,7 @@ class TuyaBLERestoreSensor(TuyaBLEActivitySensor, RestoreEntity):
                     )
                 except ValueError:
                     pass
+        await super().async_added_to_hass()
 
 
 async def async_setup_entry(

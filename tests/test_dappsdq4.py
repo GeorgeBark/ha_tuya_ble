@@ -383,6 +383,7 @@ async def test_lock_activity_ignores_old_unlock_events(hass: HomeAssistant) -> N
     assert not lock.is_locked
     lock._lock_activity_last_unlock.clear()
     device.last_unlock = None
+    device._lock_activity_watermark = None
     device.datapoints._update_from_device(
         36, 1000, 0, TuyaBLEDataPointType.DT_VALUE, 20
     )
