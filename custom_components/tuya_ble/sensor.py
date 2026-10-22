@@ -1,7 +1,7 @@
 """The Tuya BLE integration."""
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import logging
 from typing import Callable
 from homeassistant.components.sensor import (
@@ -42,14 +42,14 @@ from .const import (
     PARKSIDE_MOWER_STATUSES,
     PARKSIDE_MOWER_WARNINGS,
 )
-from .util import LAST_UNLOCK_UPDATED, format_unlock_source
+from . import util
+from .util import LAST_UNLOCK_UPDATED, UNLOCK_METHODS, format_unlock_source
 from .devices import TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .tuya_ble import TuyaBLEDataPointType, TuyaBLEDevice
 
 _LOGGER = logging.getLogger(__name__)
 SIGNAL_STRENGTH_DP_ID = -1
 LAST_UNLOCK_DP_ID = -2
-RESTORE_SENSOR_PRODUCT_IDS = frozenset({"dappsdq4"})
 TuyaBLESensorIsAvailable = Callable[["TuyaBLESensor", TuyaBLEProductInfo], bool] | None
 
 
@@ -715,27 +715,7 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                 ),
             ],
             "dappsdq4": [  # 8052F66 Smart Lock
-                TuyaBLEBatteryMapping(
-                    dp_id=8,
-                    description=SensorEntityDescription(
-                        key="battery",
-                        device_class=SensorDeviceClass.BATTERY,
-                        native_unit_of_measurement=PERCENTAGE,
-                        state_class=SensorStateClass.MEASUREMENT,
-                        suggested_display_precision=0,
-                        entity_category=EntityCategory.DIAGNOSTIC,
-                    ),
-                    getter=integer_battery_getter,
-                ),
-                TuyaBLESensorMapping(
-                    dp_id=LAST_UNLOCK_DP_ID,
-                    description=SensorEntityDescription(
-                        key="last_unlock", icon="mdi:lock-open-variant"
-                    ),
-                    getter=last_unlock_getter,
-                    restore_value=True,
-                    last_unlock=True,
-                ),
+                TuyaBLEBatteryMapping(dp_id=8),
                 TuyaBLESensorMapping(
                     dp_id=21,
                     description=SensorEntityDescription(
@@ -760,9 +740,6 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         ],
                         entity_registry_enabled_default=False,
                     ),
-                    restore_value=True,
-                    getter=timestamped_alarm_getter,
-                    timestamped_alarm=True,
                 ),
                 TuyaBLESensorMapping(
                     dp_id=12,
@@ -771,8 +748,6 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         icon="mdi:fingerprint",
                         entity_registry_enabled_default=False,
                     ),
-                    restore_value=True,
-                    getter=integer_user_id_getter,
                 ),
                 TuyaBLESensorMapping(
                     dp_id=13,
@@ -781,8 +756,6 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         icon="mdi:keyboard-outline",
                         entity_registry_enabled_default=False,
                     ),
-                    restore_value=True,
-                    getter=integer_user_id_getter,
                 ),
                 TuyaBLESensorMapping(
                     dp_id=14,
@@ -791,8 +764,6 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         icon="mdi:form-textbox-password",
                         entity_registry_enabled_default=False,
                     ),
-                    restore_value=True,
-                    getter=integer_user_id_getter,
                 ),
                 TuyaBLESensorMapping(
                     dp_id=15,
@@ -801,8 +772,6 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         icon="mdi:nfc-variant",
                         entity_registry_enabled_default=False,
                     ),
-                    restore_value=True,
-                    getter=integer_user_id_getter,
                 ),
                 TuyaBLESensorMapping(
                     dp_id=19,
@@ -811,8 +780,6 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         icon="mdi:bluetooth",
                         entity_registry_enabled_default=False,
                     ),
-                    restore_value=True,
-                    getter=integer_user_id_getter,
                 ),
                 TuyaBLESensorMapping(
                     dp_id=55,
@@ -821,8 +788,6 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         icon="mdi:lock-clock",
                         entity_registry_enabled_default=False,
                     ),
-                    restore_value=True,
-                    getter=integer_user_id_getter,
                 ),
                 TuyaBLESensorMapping(
                     dp_id=62,
@@ -831,8 +796,6 @@ mapping: dict[str, TuyaBLECategorySensorMapping] = {
                         icon="mdi:cellphone-lock",
                         entity_registry_enabled_default=False,
                     ),
-                    restore_value=True,
-                    getter=integer_user_id_getter,
                 ),
             ],
             **dict.fromkeys(
@@ -2713,15 +2676,60 @@ rssi_mapping = TuyaBLESensorMapping(
 
 
 def get_mapping_by_device(device: TuyaBLEDevice) -> list[TuyaBLESensorMapping]:
+    mappings = []
     category = mapping.get(device.category)
     if category is not None and category.products is not None:
         product_mapping = category.products.get(device.product_id)
         if product_mapping is not None:
-            return product_mapping
-        if category.mapping is not None:
-            return category.mapping
+            mappings = product_mapping
+        elif category.mapping is not None:
+            mappings = category.mapping
 
-    return []
+    if device.category not in util.LOCK_CATEGORIES:
+        return mappings
+    return lock_activity_mappings(device, mappings)
+
+
+def lock_activity_mappings(
+    device: TuyaBLEDevice, mappings: list[TuyaBLESensorMapping]
+) -> list[TuyaBLESensorMapping]:
+    """Apply opt-in features to copies, never mutate shared product mappings."""
+    product_id = device.product_id
+    result = []
+    for original in mappings:
+        changes = {}
+        if original.dp_id in UNLOCK_METHODS:
+            if product_id in util.INTEGER_UNLOCK_USER_IDS:
+                changes["getter"] = integer_user_id_getter
+            if product_id in util.RESTORE_LOCK_ACTIVITY:
+                changes["restore_value"] = True
+        elif original.dp_id == 21:
+            if product_id in util.TIMESTAMPED_LOCK_ALARMS:
+                changes.update(getter=timestamped_alarm_getter, timestamped_alarm=True)
+            if product_id in util.RESTORE_LOCK_ACTIVITY:
+                changes["restore_value"] = True
+        elif original.dp_id == 8 and product_id in util.INTEGER_LOCK_BATTERY:
+            changes.update(
+                getter=integer_battery_getter,
+                description=replace(
+                    original.description, suggested_display_precision=0
+                ),
+            )
+        result.append(replace(original, **changes) if changes else original)
+    if product_id in util.UNLOCK_ATTRIBUTION:
+        result.insert(
+            1 if result else 0,
+            TuyaBLESensorMapping(
+                dp_id=LAST_UNLOCK_DP_ID,
+                description=SensorEntityDescription(
+                    key="last_unlock", icon="mdi:lock-open-variant"
+                ),
+                getter=last_unlock_getter,
+                restore_value=product_id in util.RESTORE_LOCK_ACTIVITY,
+                last_unlock=True,
+            ),
+        )
+    return result
 
 
 class TuyaBLESensor(TuyaBLEEntity, SensorEntity):
@@ -2780,8 +2788,8 @@ class TuyaBLESensor(TuyaBLEEntity, SensorEntity):
         return result
 
 
-class TuyaBLERestoreSensor(TuyaBLESensor, RestoreEntity):
-    """Restore event-like sensor data without changing ordinary sensors."""
+class TuyaBLEActivitySensor(TuyaBLESensor):
+    """Handle activity signals and timestamps independently of restoration."""
 
     def __init__(
         self,
@@ -2794,6 +2802,34 @@ class TuyaBLERestoreSensor(TuyaBLESensor, RestoreEntity):
         super().__init__(hass, coordinator, device, product, mapping)
         self._last_unlock_unsub: Callable[[], None] | None = None
         self._lock_activity_last_timestamp = 0.0
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to attribution updates even when restore is not enabled."""
+        await super().async_added_to_hass()
+        if self._mapping.last_unlock:
+            self._last_unlock_unsub = self._hass.bus.async_listen(
+                LAST_UNLOCK_UPDATED, self._handle_last_unlock_update
+            )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unsubscribe from the internal unlock update signal."""
+        if self._last_unlock_unsub:
+            self._last_unlock_unsub()
+            self._last_unlock_unsub = None
+        await super().async_will_remove_from_hass()
+
+    @callback
+    def _handle_last_unlock_update(self, event: Event) -> None:
+        """Refresh the aggregate last-unlock sensor for its own device."""
+        if event.data["device_id"] != self._device.device_id:
+            return
+        if self._mapping.getter:
+            self._mapping.getter(self)
+        self.async_write_ha_state()
+
+
+class TuyaBLERestoreSensor(TuyaBLEActivitySensor, RestoreEntity):
+    """Restore event-like sensor data without changing ordinary sensors."""
 
     async def async_added_to_hass(self) -> None:
         """Restore the last event-like value until the lock reports again."""
@@ -2810,38 +2846,24 @@ class TuyaBLERestoreSensor(TuyaBLESensor, RestoreEntity):
                 timestamp = self._attr_extra_state_attributes["timestamp"]
                 if isinstance(timestamp, (int, float)):
                     self._device.last_unlock = self._attr_extra_state_attributes.copy()
-            elif self._mapping.timestamped_alarm:
+            elif self.entity_description.options is not None:
                 options = self.entity_description.options or []
                 if last_state.state in options:
                     self._attr_native_value = last_state.state
                 timestamp = last_state.attributes.get("timestamp")
-                if isinstance(timestamp, (int, float)):
+                if self._mapping.timestamped_alarm and isinstance(
+                    timestamp, (int, float)
+                ):
                     self._lock_activity_last_timestamp = timestamp
             else:
                 try:
-                    self._attr_native_value = int(last_state.state)
+                    self._attr_native_value = (
+                        int(last_state.state)
+                        if self._device.product_id in util.INTEGER_UNLOCK_USER_IDS
+                        else float(last_state.state)
+                    )
                 except ValueError:
                     pass
-        if self._mapping.last_unlock:
-            self._last_unlock_unsub = self._hass.bus.async_listen(
-                LAST_UNLOCK_UPDATED, self._handle_last_unlock_update
-            )
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Unsubscribe from the timestamped internal unlock update signal."""
-        if self._last_unlock_unsub:
-            self._last_unlock_unsub()
-            self._last_unlock_unsub = None
-        await super().async_will_remove_from_hass()
-
-    @callback
-    def _handle_last_unlock_update(self, event: Event) -> None:
-        """Refresh the aggregate last-unlock sensor for its own device."""
-        if event.data["device_id"] != self._device.device_id:
-            return
-        if self._mapping.getter:
-            self._mapping.getter(self)
-        self.async_write_ha_state()
 
 
 async def async_setup_entry(
@@ -2868,9 +2890,14 @@ async def async_setup_entry(
             entities.append(
                 (
                     TuyaBLERestoreSensor
-                    if data.device.product_id in RESTORE_SENSOR_PRODUCT_IDS
+                    if data.device.category in util.LOCK_CATEGORIES
+                    and data.device.product_id in util.RESTORE_LOCK_ACTIVITY
                     and mapping.restore_value
-                    else TuyaBLESensor
+                    else (
+                        TuyaBLEActivitySensor
+                        if mapping.last_unlock or mapping.timestamped_alarm
+                        else TuyaBLESensor
+                    )
                 )(
                     hass,
                     data.coordinator,

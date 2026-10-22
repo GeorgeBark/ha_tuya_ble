@@ -19,6 +19,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN
+from . import util
 from .util import is_lock_event_recent
 from .devices import TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo
 from .tuya_ble import TuyaBLEDataPoint, TuyaBLEDevice
@@ -28,6 +29,8 @@ _LOGGER = logging.getLogger(__name__)
 
 def is_recent_unlock_report(device: TuyaBLEDevice, datapoint: TuyaBLEDataPoint) -> bool:
     """Filter replayed timestamped unlock reports through a mapping callback."""
+    if device.product_id not in util.TIMESTAMPED_UNLOCK_REPORTS:
+        return True
     auto_lock_time = device.datapoints[36]
     delay = int(auto_lock_time.value) if auto_lock_time else 5
     return is_lock_event_recent(datapoint.timestamp, delay, time.time())
@@ -86,46 +89,38 @@ mapping: dict[str, TuyaBLECategoryEventMapping] = {
                     )
                 ],
             ),
-            "dappsdq4": [
-                TuyaBLEEventMapping(
-                    dp_id=12,
-                    description=EventEntityDescription(key="unlocked"),
-                    event_types=[
-                        "fingerprint",
-                        "password",
-                        "dynamic_password",
-                        "card",
-                        "ble",
-                        "temporary_password",
-                        "phone_remote",
-                    ],
-                    event_types_by_dp={
-                        12: "fingerprint",
-                        13: "password",
-                        14: "dynamic_password",
-                        15: "card",
-                        19: "ble",
-                        55: "temporary_password",
-                        62: "phone_remote",
-                    },
-                    report_filter=is_recent_unlock_report,
-                ),
-            ],
         }
     ),
 }
 
 
 def get_mapping_by_device(device: TuyaBLEDevice) -> list[TuyaBLEEventMapping]:
+    mappings = []
     category = mapping.get(device.category)
     if category is not None and category.products is not None:
         product_mapping = category.products.get(device.product_id)
         if product_mapping is not None:
-            return product_mapping
-        if category.mapping is not None:
-            return category.mapping
+            mappings = product_mapping
+        elif category.mapping is not None:
+            mappings = category.mapping
 
-    return []
+    if (
+        device.category in util.LOCK_CATEGORIES
+        and device.product_id in util.UNLOCK_ATTRIBUTION
+    ):
+        mappings = [
+            *mappings,
+            TuyaBLEEventMapping(
+                dp_id=12,
+                description=EventEntityDescription(key="unlocked"),
+                event_types=[method for method, _ in util.UNLOCK_METHODS.values()],
+                event_types_by_dp={
+                    dp_id: method for dp_id, (method, _) in util.UNLOCK_METHODS.items()
+                },
+                report_filter=is_recent_unlock_report,
+            ),
+        ]
+    return mappings
 
 
 class TuyaBLEEvent(TuyaBLEEntity, EventEntity):

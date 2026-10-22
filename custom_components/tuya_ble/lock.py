@@ -17,6 +17,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.event import async_call_later
 
 from .const import DOMAIN, DPCode
+from . import util
 from .util import (
     LAST_UNLOCK_UPDATED,
     HOME_ASSISTANT_METHOD,
@@ -39,8 +40,8 @@ PULIDO_PLD_P130 = "0qxp5u7s"
 DP71_RAW_UNLOCK_PRODUCT_IDS = frozenset({"2hmqh0ty", "djrqe0q6"})
 DP33_AUTOMATIC_LOCK_PRODUCT_IDS = frozenset({"dappsdq4"})
 DP71_TIMESTAMPED_UNLOCK_PRODUCT_IDS = frozenset({"dappsdq4"})
-RESTORE_LOCK_ACTIVITY_PRODUCT_IDS = frozenset({"dappsdq4"})
-LOCAL_UNLOCK_DPS = frozenset({12, 13, 14, 15, 55, 62})
+# BLE reports acknowledge HA Open; only the other methods open a local window.
+LOCAL_UNLOCK_DPS = UNLOCK_METHODS.keys() - {19}
 LOCK_COMMAND_PENDING_TIMEOUT = 5
 
 
@@ -65,11 +66,20 @@ async def async_setup_entry(
     data: TuyaBLEData = hass.data[DOMAIN][entry.entry_id]
     product = get_device_product_info(data.device)
     if product and product.lock:
-        lock_class = (
-            TuyaBLERestoreLock
-            if data.device.product_id in RESTORE_LOCK_ACTIVITY_PRODUCT_IDS
-            else TuyaBLELock
-        )
+        lock_class = TuyaBLELock
+        if data.device.category in util.LOCK_CATEGORIES:
+            product_id = data.device.product_id
+            if product_id in util.RESTORE_LOCK_ACTIVITY:
+                lock_class = TuyaBLERestoreLock
+            elif any(
+                product_id in capability
+                for capability in (
+                    util.LOCAL_UNLOCK_WINDOW,
+                    util.UNLOCK_ATTRIBUTION,
+                    util.DEVICE_NAMED_LOCK,
+                )
+            ):
+                lock_class = TuyaBLEActivityLock
         async_add_entities([lock_class(hass, data.coordinator, data.device, product)])
 
 
@@ -253,8 +263,8 @@ class TuyaBLELock(TuyaBLEEntity, LockEntity):
         await self.async_unlock(**kwargs)
 
 
-class TuyaBLERestoreLock(TuyaBLELock, RestoreEntity):
-    """A lock with restored activity and a transient local-unlock window."""
+class TuyaBLEActivityLock(TuyaBLELock):
+    """Opt-in activity handling, independent of state restoration."""
 
     def __init__(
         self,
@@ -264,35 +274,18 @@ class TuyaBLERestoreLock(TuyaBLELock, RestoreEntity):
         product: TuyaBLEProductInfo,
     ) -> None:
         super().__init__(hass, coordinator, device, product)
-        self.entity_description = LockEntityDescription(key="lock", name=None)
+        if device.product_id in util.DEVICE_NAMED_LOCK:
+            self.entity_description = LockEntityDescription(key="lock", name=None)
         self._lock_activity_unlock_until = 0.0
         self._lock_activity_relock_cancel: CALLBACK_TYPE | None = None
         self._lock_activity_pending_cancel: CALLBACK_TYPE | None = None
         self._lock_activity_pending_dps: set[int] = set()
         self._lock_activity_last_unlock: dict[str, Any] = {}
+        self._lock_activity_last_report_time: float | None = None
         automatic_lock = device.datapoints[33]
         self._automatic_lock_previous = (
             bool(automatic_lock.value) if automatic_lock else None
         )
-
-    async def async_added_to_hass(self) -> None:
-        """Restore the most recent local unlock timestamp."""
-        await super().async_added_to_hass()
-        if last_state := await self.async_get_last_state():
-            attributes = last_state.attributes
-            self._attr_changed_by = attributes.get("changed_by")
-            timestamp = attributes.get("last_unlock_time")
-            if isinstance(timestamp, (int, float)):
-                self._lock_activity_last_unlock = {
-                    "last_unlock_method": attributes.get("last_unlock_method"),
-                    "last_unlock_user_id": attributes.get("last_unlock_user_id"),
-                    "last_unlock_time": timestamp,
-                }
-                self._device.last_unlock = {
-                    "method": attributes.get("last_unlock_method"),
-                    "user_id": attributes.get("last_unlock_user_id"),
-                    "timestamp": timestamp,
-                }
 
     def _is_recently_unlocked(self) -> bool:
         return time.monotonic() < self._lock_activity_unlock_until
@@ -315,6 +308,8 @@ class TuyaBLERestoreLock(TuyaBLELock, RestoreEntity):
         self, expected_dp: int, is_unlock: bool = False
     ) -> None:
         """Attribute an outgoing command until its report or a short timeout."""
+        if self._device.product_id not in util.UNLOCK_ATTRIBUTION:
+            return
         self._attr_changed_by = "Home Assistant"
         if is_unlock:
             self._lock_activity_set_last_unlock(HOME_ASSISTANT_METHOD, None, None)
@@ -345,21 +340,35 @@ class TuyaBLERestoreLock(TuyaBLELock, RestoreEntity):
         """Hold the lock state open for the configured auto-lock interval."""
         auto_lock_time = self._device.datapoints[36]
         delay = int(auto_lock_time.value) if auto_lock_time else 5
-        timestamp = datapoint.timestamp
+        timestamp = (
+            datapoint.timestamp
+            if self._device.product_id in util.TIMESTAMPED_UNLOCK_REPORTS
+            else time.time()
+        )
         last_timestamp = self._lock_activity_last_unlock.get("last_unlock_time")
+        if self._device.product_id not in util.UNLOCK_ATTRIBUTION:
+            last_timestamp = self._lock_activity_last_report_time
         if last_timestamp is None and (
             last_unlock := getattr(self._device, "last_unlock", None)
         ):
             last_timestamp = last_unlock.get("timestamp")
-        if isinstance(last_timestamp, (int, float)) and timestamp <= last_timestamp:
+        if (
+            self._device.product_id in util.TIMESTAMPED_UNLOCK_REPORTS
+            and isinstance(last_timestamp, (int, float))
+            and timestamp <= last_timestamp
+        ):
             return
+        self._lock_activity_last_report_time = timestamp
         method_key, _ = UNLOCK_METHODS[datapoint.id]
-        self._lock_activity_last_unlock = {
-            "last_unlock_method": method_key,
-            "last_unlock_user_id": datapoint.value,
-            "last_unlock_time": timestamp,
-        }
-        self._lock_activity_set_last_unlock(method_key, datapoint.value, timestamp)
+        if self._device.product_id in util.UNLOCK_ATTRIBUTION:
+            self._lock_activity_last_unlock = {
+                "last_unlock_method": method_key,
+                "last_unlock_user_id": datapoint.value,
+                "last_unlock_time": timestamp,
+            }
+            self._lock_activity_set_last_unlock(method_key, datapoint.value, timestamp)
+        if self._device.product_id not in util.LOCAL_UNLOCK_WINDOW:
+            return
         remaining = timestamp + delay - time.time()
         if remaining <= 0:
             return
@@ -391,14 +400,21 @@ class TuyaBLERestoreLock(TuyaBLELock, RestoreEntity):
         for datapoint in self._coordinator.last_updates or []:
             if datapoint.id in self._lock_activity_pending_dps:
                 self._lock_activity_clear_pending()
-            if datapoint.id == 33:
+            if (
+                self._device.product_id in util.LOCAL_UNLOCK_WINDOW
+                and self._device.product_id in DP33_AUTOMATIC_LOCK_PRODUCT_IDS
+                and datapoint.id == 33
+            ):
                 if self._automatic_lock_previous is False and datapoint.value:
                     self._lock_activity_unlock_until = 0.0
                     if self._lock_activity_relock_cancel:
                         self._lock_activity_relock_cancel()
                         self._lock_activity_relock_cancel = None
                 self._automatic_lock_previous = bool(datapoint.value)
-            if datapoint.id in LOCAL_UNLOCK_DPS:
+            if datapoint.id in LOCAL_UNLOCK_DPS and (
+                self._device.product_id in util.LOCAL_UNLOCK_WINDOW
+                or self._device.product_id in util.UNLOCK_ATTRIBUTION
+            ):
                 self._lock_activity_note_unlock(datapoint)
         super()._handle_coordinator_update()
 
@@ -406,6 +422,8 @@ class TuyaBLERestoreLock(TuyaBLELock, RestoreEntity):
     def is_locked(self) -> bool | None:
         """Combine automatic-lock mode with the remaining local-unlock window."""
         locked = super().is_locked
+        if self._device.product_id not in util.LOCAL_UNLOCK_WINDOW:
+            return locked
         return (
             locked and not self._is_recently_unlocked() if locked is not None else None
         )
@@ -424,6 +442,9 @@ class TuyaBLERestoreLock(TuyaBLELock, RestoreEntity):
 
     async def async_open(self, **kwargs: Any) -> None:
         """Attribute an HA Open after validating its credential."""
+        if self._device.product_id not in DP71_TIMESTAMPED_UNLOCK_PRODUCT_IDS:
+            await super().async_open(**kwargs)
+            return
         check = self._device._device_info.ble_unlock_check
         if not check:
             raise HomeAssistantError(
@@ -443,3 +464,26 @@ class TuyaBLERestoreLock(TuyaBLELock, RestoreEntity):
         )
         await ble_unlock.set_value(command)
         return
+
+
+class TuyaBLERestoreLock(TuyaBLEActivityLock, RestoreEntity):
+    """Restore activity, never a transient unlocked state or a pending command."""
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the most recent local unlock timestamp."""
+        await super().async_added_to_hass()
+        if last_state := await self.async_get_last_state():
+            attributes = last_state.attributes
+            self._attr_changed_by = attributes.get("changed_by")
+            timestamp = attributes.get("last_unlock_time")
+            if isinstance(timestamp, (int, float)):
+                self._lock_activity_last_unlock = {
+                    "last_unlock_method": attributes.get("last_unlock_method"),
+                    "last_unlock_user_id": attributes.get("last_unlock_user_id"),
+                    "last_unlock_time": timestamp,
+                }
+                self._device.last_unlock = {
+                    "method": attributes.get("last_unlock_method"),
+                    "user_id": attributes.get("last_unlock_user_id"),
+                    "timestamp": timestamp,
+                }

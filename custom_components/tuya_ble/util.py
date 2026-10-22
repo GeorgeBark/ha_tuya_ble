@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
+# Opt-in lock capabilities (ms / jtmspro). Validate each feature on hardware
+# before adding a product; these sets deliberately have no implicit dependencies.
+LOCK_CATEGORIES = frozenset({"ms", "jtmspro"})
+TIMESTAMPED_UNLOCK_REPORTS = frozenset({"dappsdq4"})
+LOCAL_UNLOCK_WINDOW = frozenset({"dappsdq4"})
+UNLOCK_ATTRIBUTION = frozenset({"dappsdq4"})
+RESTORE_LOCK_ACTIVITY = frozenset({"dappsdq4"})
+INTEGER_UNLOCK_USER_IDS = frozenset({"dappsdq4"})
+INTEGER_LOCK_BATTERY = frozenset({"dappsdq4"})
+TIMESTAMPED_LOCK_ALARMS = frozenset({"dappsdq4"})
+DEVICE_NAMED_LOCK = frozenset({"dappsdq4"})
+
 # Internal notification for aggregate unlock sensors, not an automation event.
 LAST_UNLOCK_UPDATED = "tuya_ble_last_unlock_updated"
 HOME_ASSISTANT_METHOD = "home_assistant"
