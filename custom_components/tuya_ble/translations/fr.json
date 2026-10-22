@@ -797,7 +797,11 @@
                 "description": "Maintenir la connexion : la liaison BLE reste ouverte en permanence (réponse la plus rapide, occupe un emplacement de connexion actif sur l'adaptateur/proxy, consommation de batterie plus élevée sur les appareils sur batterie). Désactivé : connexion à la demande et déconnexion après le délai d'inactivité (1 à 3 s de latence par commande).",
                 "data": {
                     "keep_connection": "Maintenir la connexion BLE ouverte",
-                    "idle_disconnect_delay": "Délai de déconnexion pour inactivité (secondes)"
+                    "idle_disconnect_delay": "Délai de déconnexion pour inactivité (secondes)",
+                    "report_momentary_releases_as_open": "Report momentary releases as Open"
+                },
+                "data_description": {
+                    "report_momentary_releases_as_open": "Show the lock as Open while the handle is briefly released (fingerprint, code, card or Open from Home Assistant). Unlocked is then reserved for passage mode."
                 }
             }
         }

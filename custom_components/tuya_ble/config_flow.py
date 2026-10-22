@@ -70,6 +70,7 @@ from .const import (
     CONF_PRODUCT_NAME,
     CONF_IDLE_DISCONNECT_DELAY,
     CONF_KEEP_CONNECTION,
+    CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN,
     CONF_MOBILE_APP,
     CONF_SEC_KEY,
     CONF_STATUS_RANGE,
@@ -79,6 +80,7 @@ from .const import (
     DOMAIN,
 )
 from .devices import get_device_readable_name
+from . import util
 from .cloud import HASSTuyaBLEDeviceManager, TuyaMobileIdentityMismatch
 from .tuya_ble.security import decode_timestamped_ble_unlock_check
 
@@ -380,8 +382,8 @@ def _validate_manual(
 
 
 def _settings_schema(defaults: dict[str, Any]) -> vol.Schema:
-    """Schema for the connection policy."""
-    return vol.Schema(
+    """Schema for connection policy and opt-in lock presentation."""
+    schema = vol.Schema(
         {
             vol.Required(
                 CONF_KEEP_CONNECTION,
@@ -395,6 +397,19 @@ def _settings_schema(defaults: dict[str, Any]) -> vol.Schema:
             ): vol.All(vol.Coerce(int), vol.Range(min=5, max=3600)),
         }
     )
+    if (
+        defaults.get(CONF_CATEGORY) in util.LOCK_CATEGORIES
+        and defaults.get(CONF_PRODUCT_ID) in util.LOCAL_UNLOCK_WINDOW
+    ):
+        schema = schema.extend(
+            {
+                vol.Required(
+                    CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN,
+                    default=defaults.get(CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN, False),
+                ): bool,
+            }
+        )
+    return schema
 
 
 class TuyaBLEOptionsFlow(OptionsFlowWithConfigEntry):

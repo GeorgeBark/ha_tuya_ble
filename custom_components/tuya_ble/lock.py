@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.event import async_call_later
 
-from .const import DOMAIN, DPCode
+from .const import DOMAIN, DPCode, CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN
 from . import util
 from .util import (
     LAST_UNLOCK_UPDATED,
@@ -80,7 +80,15 @@ async def async_setup_entry(
                 )
             ):
                 lock_class = TuyaBLEActivityLock
-        async_add_entities([lock_class(hass, data.coordinator, data.device, product)])
+        entity = lock_class(hass, data.coordinator, data.device, product)
+        if (
+            data.device.category in util.LOCK_CATEGORIES
+            and data.device.product_id in util.LOCAL_UNLOCK_WINDOW
+        ):
+            entity._report_momentary_releases_as_open = (
+                entry.options.get(CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN, False) is True
+            )
+        async_add_entities([entity])
 
 
 class TuyaBLELock(TuyaBLEEntity, LockEntity):
@@ -274,6 +282,7 @@ class TuyaBLEActivityLock(TuyaBLELock):
         product: TuyaBLEProductInfo,
     ) -> None:
         super().__init__(hass, coordinator, device, product)
+        self._report_momentary_releases_as_open = False
         if device.product_id in util.DEVICE_NAMED_LOCK:
             self.entity_description = LockEntityDescription(key="lock", name=None)
         self._lock_activity_unlock_until = 0.0
@@ -433,8 +442,24 @@ class TuyaBLEActivityLock(TuyaBLELock):
         super()._handle_coordinator_update()
 
     @property
+    def is_open(self) -> bool | None:
+        """Optionally distinguish a brief handle release from passage mode."""
+        if not self._use_open_state:
+            return super().is_open
+        return self._is_recently_unlocked()
+
+    @property
+    def _use_open_state(self) -> bool:
+        return (
+            self._device.product_id in util.LOCAL_UNLOCK_WINDOW
+            and self._report_momentary_releases_as_open
+        )
+
+    @property
     def is_locked(self) -> bool | None:
         """Combine automatic-lock mode with the remaining local-unlock window."""
+        if self.is_open:
+            return False
         locked = super().is_locked
         if self._device.product_id not in util.LOCAL_UNLOCK_WINDOW:
             return locked
@@ -447,12 +472,22 @@ class TuyaBLEActivityLock(TuyaBLELock):
         self._lock_activity_note_ha_command(33)
         await super().async_lock(**kwargs)
         self._automatic_lock_previous = True
+        if self._use_open_state:
+            self._end_open_window()
 
     async def async_unlock(self, **kwargs: Any) -> None:
         """Attribute an HA passage-mode unlock."""
         self._lock_activity_note_ha_command(33, is_unlock=True)
         await super().async_unlock(**kwargs)
         self._automatic_lock_previous = False
+        if self._use_open_state:
+            self._end_open_window()
+
+    def _end_open_window(self) -> None:
+        """Publish an explicit mode change without a lingering Open window."""
+        if self._lock_activity_relock_cancel:
+            self._lock_activity_relock_cancel()
+        self._lock_activity_relock(None)
 
     async def async_open(self, **kwargs: Any) -> None:
         """Attribute an HA Open after validating its credential."""
@@ -476,7 +511,20 @@ class TuyaBLEActivityLock(TuyaBLELock):
         ble_unlock = self._device.datapoints.get_or_create(
             71, TuyaBLEDataPointType.DT_RAW, command
         )
+        open_until = 0.0
+        if self._use_open_state:
+            auto_lock_time = self._device.datapoints[36]
+            delay = int(auto_lock_time.value) if auto_lock_time else 5
+            open_until = time.monotonic() + delay
         await ble_unlock.set_value(command)
+        if self._use_open_state and (remaining := open_until - time.monotonic()) > 0:
+            self._lock_activity_unlock_until = open_until
+            if self._lock_activity_relock_cancel:
+                self._lock_activity_relock_cancel()
+            self._lock_activity_relock_cancel = async_call_later(
+                self._hass, remaining, self._lock_activity_relock
+            )
+            self.async_write_ha_state()
         return
 
 

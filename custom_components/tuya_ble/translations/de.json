@@ -797,7 +797,11 @@
                 "description": "Verbindung halten: Die BLE-Verbindung bleibt dauerhaft offen (schnellste Reaktion, belegt einen aktiven Slot am Bluetooth-Adapter/-Proxy, höherer Batterieverbrauch). Aus: Verbindung nur bei Bedarf, Trennung nach der Leerlaufzeit (1–3 s Verzögerung pro Befehl).",
                 "data": {
                     "keep_connection": "BLE-Verbindung dauerhaft halten",
-                    "idle_disconnect_delay": "Leerlaufzeit bis zur Trennung (Sekunden)"
+                    "idle_disconnect_delay": "Leerlaufzeit bis zur Trennung (Sekunden)",
+                    "report_momentary_releases_as_open": "Report momentary releases as Open"
+                },
+                "data_description": {
+                    "report_momentary_releases_as_open": "Show the lock as Open while the handle is briefly released (fingerprint, code, card or Open from Home Assistant). Unlocked is then reserved for passage mode."
                 }
             }
         }

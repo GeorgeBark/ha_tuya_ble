@@ -797,7 +797,11 @@
                 "description": "保持连接：BLE 链路将保持永久打开状态（响应最快，占用适配器/代理上的一个活动连接槽位，电池供电设备耗电量更高）。关闭：按需连接并在空闲延迟后断开（每个命令有 1–3 秒延迟）。",
                 "data": {
                     "keep_connection": "保持 BLE 连接打开",
-                    "idle_disconnect_delay": "空闲断开延迟（秒）"
+                    "idle_disconnect_delay": "空闲断开延迟（秒）",
+                    "report_momentary_releases_as_open": "Report momentary releases as Open"
+                },
+                "data_description": {
+                    "report_momentary_releases_as_open": "Show the lock as Open while the handle is briefly released (fingerprint, code, card or Open from Home Assistant). Unlocked is then reserved for passage mode."
                 }
             }
         }

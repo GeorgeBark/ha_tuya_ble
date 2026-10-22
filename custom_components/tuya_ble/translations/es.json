@@ -797,7 +797,11 @@
                 "description": "Mantener conexión: el enlace BLE permanece abierto de forma permanente (respuesta más rápida, ocupa una ranura de conexión activa en el adaptador/proxy, mayor consumo de batería en dispositivos a pilas). Desactivado: conectar bajo demanda y desconectar tras el retraso por inactividad (latencia de 1–3 s por comando).",
                 "data": {
                     "keep_connection": "Mantener la conexión BLE abierta",
-                    "idle_disconnect_delay": "Tiempo de desconexión por inactividad (segundos)"
+                    "idle_disconnect_delay": "Tiempo de desconexión por inactividad (segundos)",
+                    "report_momentary_releases_as_open": "Mostrar las aperturas momentáneas como Abierta"
+                },
+                "data_description": {
+                    "report_momentary_releases_as_open": "Muestra la cerradura como Abierta mientras la manilla se libera brevemente (huella, código, tarjeta o Abrir desde Home Assistant). El estado Desbloqueada queda reservado para el modo paso."
                 }
             }
         }

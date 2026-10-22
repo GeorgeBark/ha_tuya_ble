@@ -25,6 +25,7 @@ CONF_KEEP_CONNECTION: Final = "keep_connection"
 CONF_IDLE_DISCONNECT_DELAY: Final = "idle_disconnect_delay"
 DEFAULT_KEEP_CONNECTION: Final = True
 DEFAULT_IDLE_DISCONNECT_DELAY: Final = 30
+CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN: Final = "report_momentary_releases_as_open"
 CONF_CATEGORY: Final = "category"
 CONF_PRODUCT_ID: Final = "product_id"
 CONF_DEVICE_NAME: Final = "device_name"

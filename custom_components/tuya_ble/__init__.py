@@ -31,11 +31,13 @@ from .const import (
     CONF_UUID,
     CONF_IDLE_DISCONNECT_DELAY,
     CONF_KEEP_CONNECTION,
+    CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN,
     DEFAULT_IDLE_DISCONNECT_DELAY,
     DEFAULT_KEEP_CONNECTION,
     DOMAIN,
 )
 from .devices import TuyaBLECoordinator, TuyaBLEData, get_device_product_info
+from . import util
 
 PLATFORMS: list[Platform] = [
     Platform.BUTTON,
@@ -245,6 +247,12 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
         or any(
             entry.options.get(key) != data.manager.data.get(key)
             for key in CREDENTIAL_OPTION_KEYS
+        )
+        or (
+            data.device.category in util.LOCK_CATEGORIES
+            and data.device.product_id in util.LOCAL_UNLOCK_WINDOW
+            and entry.options.get(CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN, False)
+            != data.manager.data.get(CONF_REPORT_MOMENTARY_RELEASES_AS_OPEN, False)
         )
     ):
         await hass.config_entries.async_reload(entry.entry_id)
