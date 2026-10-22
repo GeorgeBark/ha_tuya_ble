@@ -300,6 +300,7 @@ class TuyaBLEActivityLock(TuyaBLELock):
     def _lock_activity_clear_pending(self, _: None = None) -> None:
         """Stop attributing later device reports to a Home Assistant command."""
         self._lock_activity_pending_dps.clear()
+        self._device._lock_activity_pending_until = 0.0
         if self._lock_activity_pending_cancel:
             self._lock_activity_pending_cancel()
         self._lock_activity_pending_cancel = None
@@ -314,6 +315,9 @@ class TuyaBLEActivityLock(TuyaBLELock):
         if is_unlock:
             self._lock_activity_set_last_unlock(HOME_ASSISTANT_METHOD, None, None)
         self._lock_activity_pending_dps.add(expected_dp)
+        self._device._lock_activity_pending_until = (
+            time.monotonic() + LOCK_COMMAND_PENDING_TIMEOUT
+        )
         if self._lock_activity_pending_cancel:
             self._lock_activity_pending_cancel()
         self._lock_activity_pending_cancel = async_call_later(
@@ -387,6 +391,8 @@ class TuyaBLEActivityLock(TuyaBLELock):
         if self._lock_activity_pending_cancel:
             self._lock_activity_pending_cancel()
             self._lock_activity_pending_cancel = None
+        self._device._lock_activity_pending_until = 0.0
+        self._device._lock_activity_ha_command_updates = None
         await super().async_will_remove_from_hass()
 
     @property
@@ -397,6 +403,14 @@ class TuyaBLEActivityLock(TuyaBLELock):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Record local unlock reports before refreshing state."""
+        if self._lock_activity_pending_dps and time.monotonic() < getattr(
+            self._device, "_lock_activity_pending_until", 0.0
+        ):
+            # Keep the batch classification after the acknowledgement clears
+            # pending state, regardless of lock/event listener ordering.
+            self._device._lock_activity_ha_command_updates = (
+                self._coordinator.last_updates
+            )
         for datapoint in self._coordinator.last_updates or []:
             if datapoint.id in self._lock_activity_pending_dps:
                 self._lock_activity_clear_pending()

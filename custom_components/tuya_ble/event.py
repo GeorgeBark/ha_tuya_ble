@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import logging
 import time
 from typing import Callable
@@ -194,6 +194,49 @@ class TuyaBLEEvent(TuyaBLEEntity, EventEntity):
             self.async_write_ha_state()
 
 
+class TuyaBLEUnlockEvent(TuyaBLEEvent):
+    """Opt-in unlock events with HA acknowledgement filtering and availability."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        coordinator: DataUpdateCoordinator,
+        device: TuyaBLEDevice,
+        product: TuyaBLEProductInfo,
+        mapping: TuyaBLEEventMapping,
+    ) -> None:
+        super().__init__(hass, coordinator, device, product, mapping)
+        self._last_available = self.available
+        self._unlock_report_filter = mapping.report_filter
+        self._mapping = replace(mapping, report_filter=self._filter_unlock_report)
+
+    def _filter_unlock_report(
+        self, device: TuyaBLEDevice, datapoint: TuyaBLEDataPoint
+    ) -> bool:
+        """Do not expose an HA command acknowledgement as a second unlock."""
+        if datapoint.id == 19 and (
+            time.monotonic() < getattr(device, "_lock_activity_pending_until", 0.0)
+            or (
+                self._coordinator.last_updates is not None
+                and self._coordinator.last_updates
+                is getattr(device, "_lock_activity_ha_command_updates", None)
+            )
+        ):
+            return False
+        return self._unlock_report_filter is None or self._unlock_report_filter(
+            device, datapoint
+        )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Refresh availability without inventing or replacing a restored event."""
+        available = self.available
+        if available != self._last_available:
+            self._last_available = available
+            self.async_write_ha_state()
+        super()._handle_coordinator_update()
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -205,8 +248,15 @@ async def async_setup_entry(
     entities: list[TuyaBLEEvent] = []
     for mapping in mappings:
         if mapping.force_add or data.device.datapoints.has_id(mapping.dp_id):
+            event_class = (
+                TuyaBLEUnlockEvent
+                if data.device.category in util.LOCK_CATEGORIES
+                and data.device.product_id in util.UNLOCK_ATTRIBUTION
+                and mapping.description.key == "unlocked"
+                else TuyaBLEEvent
+            )
             entities.append(
-                TuyaBLEEvent(
+                event_class(
                     hass,
                     data.coordinator,
                     data.device,

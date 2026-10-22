@@ -329,3 +329,136 @@ async def test_dappsdq4_event_methods_share_the_common_table(make_entities, dp_i
         method, {"method": method, "user_id": 3}
     )
     assert type(entity) is lock.TuyaBLERestoreLock
+
+
+@pytest.mark.parametrize("event_first", [False, True])
+async def test_ha_open_acknowledgement_is_not_an_unlock_event(
+    make_entities, event_first
+):
+    """Suppress HA DP19 in either listener order, but not a later app unlock."""
+    from tests.test_dappsdq4 import CHECK_VALUE
+
+    device, coordinator, entity, _, events = await make_entities("dappsdq4")
+    device._device_info.ble_unlock_check = CHECK_VALUE
+    unlock_event = events[0]
+    unlock_event._trigger_event = Mock()
+    with patch("time.monotonic", return_value=500):
+        await entity.async_open()
+    entities = [unlock_event, entity] if event_first else [entity, unlock_event]
+    report(device, coordinator, entities, 19, 0)
+    unlock_event._trigger_event.assert_not_called()
+    assert entity.changed_by == "Home Assistant"
+    assert device.last_unlock["method"] == "home_assistant"
+    assert not entity._lock_activity_pending_dps
+    # A new batch must not inherit the previous batch's acknowledgement marker,
+    # even if the same mutable datapoint object/timestamp/value is reused.
+    report(device, coordinator, entities, 19, 0)
+    unlock_event._trigger_event.assert_called_once_with(
+        "ble", {"method": "ble", "user_id": 0}
+    )
+
+
+@pytest.mark.parametrize("pending", [False, True])
+async def test_ble_unlock_without_pending_ha_command_emits_event(
+    make_entities, pending
+):
+    """Smart Life reports are accepted with no command or after its timeout."""
+    device, coordinator, entity, _, events = await make_entities("dappsdq4")
+    unlock_event = events[0]
+    unlock_event._trigger_event = Mock()
+    if pending:
+        # An expired deadline is enough even if the timeout callback is delayed.
+        with patch("time.monotonic", return_value=494):
+            await entity.async_unlock()
+    report(device, coordinator, [entity, unlock_event], 19, 0)
+    unlock_event._trigger_event.assert_called_once_with(
+        "ble", {"method": "ble", "user_id": 0}
+    )
+
+
+async def test_pending_ha_command_does_not_suppress_local_unlock(make_entities):
+    device, coordinator, entity, _, events = await make_entities("dappsdq4")
+    unlock_event = events[0]
+    unlock_event._trigger_event = Mock()
+    with patch("time.monotonic", return_value=500):
+        await entity.async_unlock()
+    report(device, coordinator, [entity, unlock_event], 12, 7)
+    unlock_event._trigger_event.assert_called_once_with(
+        "fingerprint", {"method": "fingerprint", "user_id": 7}
+    )
+
+
+async def test_unlock_event_restores_and_refreshes_availability(
+    make_entities,
+):
+    """Reconnect publishes the restored event without generating a new event."""
+    from homeassistant.components.event import EventExtraStoredData
+
+    device, coordinator, _, _, events = await make_entities("dappsdq4")
+    unlock_event = events[0]
+    assert type(unlock_event) is event.TuyaBLEUnlockEvent
+    assert not unlock_event.available
+    timestamp = "2026-10-22T10:00:00.000+00:00"
+    unlock_event.async_get_last_state = AsyncMock(
+        return_value=State(unlock_event.entity_id, timestamp)
+    )
+    unlock_event.async_get_last_event_data = AsyncMock(
+        return_value=EventExtraStoredData(
+            "fingerprint", {"method": "fingerprint", "user_id": 7}
+        )
+    )
+    with patch.object(RestoreEntity, "async_internal_added_to_hass", new=AsyncMock()):
+        await unlock_event.async_internal_added_to_hass()
+    assert unlock_event.state == timestamp
+    attributes = unlock_event.state_attributes.copy()
+    unlock_event._trigger_event = Mock()
+    coordinator.last_updates = None
+    coordinator._disconnected = False
+    unlock_event._handle_coordinator_update()
+    assert unlock_event.available
+    unlock_event.async_write_ha_state.assert_called_once()
+    assert unlock_event.state == timestamp
+    assert unlock_event.state_attributes == attributes
+    unlock_event._trigger_event.assert_not_called()
+    # The opposite transition must be published too, with no new unlock DP.
+    coordinator._disconnected = True
+    unlock_event._handle_coordinator_update()
+    assert not unlock_event.available
+    assert unlock_event.async_write_ha_state.call_count == 2
+    unlock_event._handle_coordinator_update()
+    assert unlock_event.async_write_ha_state.call_count == 2
+
+
+async def test_doorbell_keeps_original_availability_update_behavior(make_entities):
+    device, coordinator, _, _, events = await make_entities("djrqe0q6")
+    doorbell = events[0]
+    assert type(doorbell) is event.TuyaBLEEvent
+    coordinator._disconnected = False
+    coordinator.last_updates = None
+    doorbell._handle_coordinator_update()
+    doorbell.async_write_ha_state.assert_not_called()
+
+
+@pytest.mark.parametrize("timestamp", [1000, 1000.5, None, "1000"])
+async def test_alarm_restores_numeric_timestamp_attribute(make_entities, timestamp):
+    device, coordinator, _, sensors, _ = await make_entities("dappsdq4")
+    alarm = sensors[21]
+    alarm.async_get_last_state = AsyncMock(
+        return_value=State("sensor.alarm", "wrong_finger", {"timestamp": timestamp})
+    )
+    with patch(
+        "custom_components.tuya_ble.devices.TuyaBLEEntity.async_added_to_hass",
+        new=AsyncMock(),
+    ):
+        await alarm.async_added_to_hass()
+    assert alarm.native_value == "wrong_finger"
+    if isinstance(timestamp, (int, float)):
+        assert alarm.extra_state_attributes == {"timestamp": timestamp}
+        report(device, coordinator, [alarm], 21, 1, timestamp=999)
+        assert alarm.native_value == "wrong_finger"
+        assert alarm.extra_state_attributes == {"timestamp": timestamp}
+    else:
+        assert alarm.extra_state_attributes is None
+    report(device, coordinator, [alarm], 21, 1, timestamp=1001)
+    assert alarm.native_value == "wrong_password"
+    assert alarm.extra_state_attributes == {"timestamp": 1001}

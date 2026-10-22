@@ -2855,6 +2855,7 @@ class TuyaBLERestoreSensor(TuyaBLEActivitySensor, RestoreEntity):
                     timestamp, (int, float)
                 ):
                     self._lock_activity_last_timestamp = timestamp
+                    self._attr_extra_state_attributes = {"timestamp": timestamp}
             else:
                 try:
                     self._attr_native_value = (
