@@ -533,7 +533,7 @@ async def test_first_report_from_old_history_has_no_person_context(hass, mapped_
     await hass.async_block_till_done()
     assert env.lock.state == LockState.LOCKED
     assert env.event.state is None
-    assert env.last.native_value == "Fingerprint 1"
+    assert env.last.native_value == "Jorge · Fingerprint 1"
     assert hass.states.get(env.last.entity_id).context.user_id is None
 
 

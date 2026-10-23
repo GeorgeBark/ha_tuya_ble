@@ -365,13 +365,18 @@ class TuyaBLEActivityLock(TuyaBLELock):
         user_id: int | None,
         timestamp: float | None,
         activity: UnlockActivity | None = None,
+        identity: dict[str, str] | None = None,
     ) -> None:
         """Store and publish the most recent unlock source."""
         self._device.last_unlock = {
             "method": method,
             "user_id": user_id,
             "timestamp": timestamp,
-            **(activity.identity_data if activity else {}),
+            **(
+                identity
+                if identity is not None
+                else activity.identity_data if activity else {}
+            ),
         }
         self._attr_changed_by = format_unlock_record(self._device.last_unlock)
         if activity:
@@ -422,22 +427,20 @@ class TuyaBLEActivityLock(TuyaBLELock):
         method_key, _ = UNLOCK_METHODS[datapoint.id]
         resolver = get_lock_activity(self._coordinator)
         activity = resolver.activities.get(datapoint.id) if resolver else None
+        identity = resolver.identities.get(datapoint.id, {}) if resolver else {}
         if self._device.product_id in util.UNLOCK_ATTRIBUTION:
             self._lock_activity_last_unlock = {
                 "last_unlock_method": method_key,
                 "last_unlock_user_id": datapoint.value,
                 "last_unlock_time": timestamp,
                 **(
-                    {
-                        f"last_unlock_{key}": value
-                        for key, value in activity.identity_data.items()
-                    }
-                    if activity
+                    {f"last_unlock_{key}": value for key, value in identity.items()}
+                    if identity
                     else {}
                 ),
             }
             self._lock_activity_set_last_unlock(
-                method_key, datapoint.value, timestamp, activity
+                method_key, datapoint.value, timestamp, activity, identity
             )
         if datapoint.id == 19:
             if activity:
@@ -524,7 +527,7 @@ class TuyaBLEActivityLock(TuyaBLELock):
                 or self._device.product_id in util.UNLOCK_ATTRIBUTION
             ):
                 self._lock_activity_note_unlock(datapoint)
-            elif datapoint.id == 19 and resolver and 19 in resolver.activities:
+            elif datapoint.id == 19 and resolver and 19 in resolver.identities:
                 self._lock_activity_note_unlock(datapoint)
         activity = resolver.latest_activity if resolver else None
         with scoped_activity_context(self, activity.context if activity else None):

@@ -10,6 +10,7 @@ import orjson
 import pytest
 
 from custom_components.tuya_ble.lock import EVENT_LOCK
+from custom_components.tuya_ble.tuya_ble import TuyaBLEDataPointType
 from .test_lock_capabilities import make_entities, report
 from .test_lock_user_names import named_mapping
 from .test_lock_users import mapped_lock, mapping
@@ -133,3 +134,71 @@ async def test_reports_during_restore_wait_for_durable_watermark(hass, mapped_lo
     assert not bus
     assert env.resolver._last_timestamp == 1000
     assert env.lock.changed_by == env.last.native_value == "Emergency Fob · Card 3"
+
+
+@pytest.mark.parametrize("named", [False, True], ids=["person", "name"])
+@pytest.mark.parametrize(
+    "dp_id,method,label", [(12, "fingerprint", "Fingerprint"), (19, "ble", "BLE")]
+)
+async def test_accepted_hour_late_report_keeps_identity_without_recent_effects(
+    hass, mapped_lock, named, dp_id, method, label
+):
+    identity = (
+        {"name": "Emergency Fob"}
+        if named
+        else {"person_entity_id": "person.jorge", "person_name": "Jorge"}
+    )
+    configured = {
+        "method": method,
+        "user_id": 1,
+        **(
+            {"name": "Emergency Fob"} if named else {"person_entity_id": "person.jorge"}
+        ),
+    }
+    env = await mapped_lock([configured])
+    report(env.device, env.coordinator, env.entities, 15, 3, timestamp=1000)
+    env.lock._lock_activity_relock(None)
+    await hass.async_block_till_done()
+    previous_event = env.event.state
+    bus = []
+    hass.bus.async_listen(EVENT_LOCK, bus.append)
+    env.device.datapoints._update_from_device(
+        dp_id, 1001, 0, TuyaBLEDataPointType.DT_VALUE, 1
+    )
+    env.coordinator.last_updates = [env.device.datapoints[dp_id]]
+    with (
+        patch("time.time", return_value=5002),
+        patch("time.monotonic", return_value=500),
+    ):
+        for entity in reversed(env.entities):
+            entity._handle_coordinator_update()
+    await hass.async_block_till_done()
+    assert (
+        env.lock.changed_by
+        == env.last.native_value
+        == f"{'Emergency Fob' if named else 'Jorge'} · {label} 1"
+    )
+    assert env.device.last_unlock == {
+        "method": method,
+        "user_id": 1,
+        "timestamp": 1001,
+        **identity,
+    }
+    assert env.last.extra_state_attributes == env.device.last_unlock
+    assert env.lock.extra_state_attributes == {
+        "last_unlock_method": method,
+        "last_unlock_user_id": 1,
+        "last_unlock_time": 1001,
+        **{f"last_unlock_{key}": value for key, value in identity.items()},
+    }
+    assert env.device._lock_activity_watermark == 1001
+    assert not env.resolver.activities
+    assert not bus
+    assert env.event.state == previous_event
+    assert env.lock._lock_activity_unlock_until == 0
+    assert env.lock._lock_activity_relock_cancel is None
+    assert env.lock.is_locked
+    assert all(
+        hass.states.get(entity.entity_id).context.user_id is None
+        for entity in (env.lock, env.last)
+    )

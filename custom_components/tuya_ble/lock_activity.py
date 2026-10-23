@@ -110,6 +110,7 @@ class LockActivity:
         self._batch: list[TuyaBLEDataPoint] | None = None
         self._last_timestamp: float | None = None
         self.activities: dict[int, UnlockActivity] = {}
+        self.identities: dict[int, dict[str, str]] = {}
         self.latest_report: TuyaBLEDataPoint | None = None
         self.has_mapping = False
         self._writers: dict[str, Callable[[], None]] = {}
@@ -176,6 +177,7 @@ class LockActivity:
         """Resolve each batch once, before any consumer changes last_unlock."""
         if not getattr(self.device, "_lock_activity_restored", True):
             self.activities = {}
+            self.identities = {}
             self.latest_report = None
             self.has_mapping = False
             return
@@ -189,6 +191,7 @@ class LockActivity:
             return
         self._batch = updates
         self.activities = {}
+        self.identities = {}
         self.latest_report = None
         self.has_mapping = False
         if not updates:
@@ -227,6 +230,14 @@ class LockActivity:
             self.latest_report = dp
             if not resolved:
                 continue
+            self.identities[dp.id] = (
+                {"name": name}
+                if name is not None
+                else {
+                    "person_entity_id": person_id,
+                    "person_name": person.attributes.get("friendly_name") or person_id,
+                }
+            )
             delay_dp = self.device.datapoints[36]
             delay = int(delay_dp.value) if delay_dp else 5
             if not util.is_lock_event_recent(dp.timestamp, delay, time.time()):
