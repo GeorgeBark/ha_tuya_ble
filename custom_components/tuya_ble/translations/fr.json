@@ -220,6 +220,12 @@
             },
             "rain_delay_time": {
                 "name": "Durée du délai de pluie"
+            },
+            "step_time": {
+                "name": "Durée par marche"
+            },
+            "off_delay": {
+                "name": "Délai d'extinction"
             }
         },
         "select": {
@@ -347,6 +353,40 @@
                     "smart": "Intelligent",
                     "spot": "Localisé",
                     "goto_charge": "Retour à la base"
+                }
+            },
+            "stair_mode": {
+                "name": "Mode",
+                "state": {
+                    "auto": "Automatique",
+                    "on": "Allumé",
+                    "off": "Éteint"
+                }
+            },
+            "auto_effect": {
+                "name": "Effet automatique",
+                "state": {
+                    "full": "Complet",
+                    "gradual": "Progressif",
+                    "following": "Suivi",
+                    "flowing": "Fluide"
+                }
+            },
+            "heater_mode": {
+                "name": "Mode du chauffage",
+                "state": {
+                    "smart": "Intelligent",
+                    "auto": "Auto"
+                }
+            },
+            "heater_level": {
+                "name": "Niveau du chauffage",
+                "state": {
+                    "1": "1",
+                    "2": "2",
+                    "3": "3",
+                    "4": "4",
+                    "5": "5"
                 }
             }
         },
@@ -624,6 +664,15 @@
             },
             "last_unlock": {
                 "name": "Dernier déverrouillage"
+            },
+            "heat_exchanger_temperature": {
+                "name": "Température de l'échangeur"
+            },
+            "heater_work_state": {
+                "name": "État du chauffage",
+                "state": {
+                    "heating": "Chauffe"
+                }
             }
         },
         "switch": {

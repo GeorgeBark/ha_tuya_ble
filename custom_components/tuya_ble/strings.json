@@ -220,6 +220,12 @@
             },
             "rain_delay_time": {
                 "name": "Rain delay time"
+            },
+            "step_time": {
+                "name": "Step time"
+            },
+            "off_delay": {
+                "name": "Light off delay"
             }
         },
         "select": {
@@ -347,6 +353,40 @@
                     "smart": "Smart",
                     "spot": "Spot",
                     "goto_charge": "Return to dock"
+                }
+            },
+            "stair_mode": {
+                "name": "Mode",
+                "state": {
+                    "auto": "Auto",
+                    "on": "On",
+                    "off": "Off"
+                }
+            },
+            "auto_effect": {
+                "name": "Auto effect",
+                "state": {
+                    "full": "Full",
+                    "gradual": "Gradual",
+                    "following": "Following",
+                    "flowing": "Flowing"
+                }
+            },
+            "heater_mode": {
+                "name": "Heater mode",
+                "state": {
+                    "smart": "Smart",
+                    "auto": "Auto"
+                }
+            },
+            "heater_level": {
+                "name": "Heater level",
+                "state": {
+                    "1": "1",
+                    "2": "2",
+                    "3": "3",
+                    "4": "4",
+                    "5": "5"
                 }
             }
         },
@@ -607,6 +647,15 @@
             },
             "last_unlock": {
                 "name": "Last unlock"
+            },
+            "heat_exchanger_temperature": {
+                "name": "Heat exchanger temperature"
+            },
+            "heater_work_state": {
+                "name": "Heater work state",
+                "state": {
+                    "heating": "Heating"
+                }
             }
         },
         "switch": {

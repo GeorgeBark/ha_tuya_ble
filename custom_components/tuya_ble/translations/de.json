@@ -220,6 +220,12 @@
             },
             "rain_delay_time": {
                 "name": "Regenverzögerungsdauer"
+            },
+            "step_time": {
+                "name": "Stufenzeit"
+            },
+            "off_delay": {
+                "name": "Ausschaltverzögerung"
             }
         },
         "select": {
@@ -347,6 +353,40 @@
                     "smart": "Smart",
                     "spot": "Punktuell",
                     "goto_charge": "Zur Ladestation"
+                }
+            },
+            "stair_mode": {
+                "name": "Modus",
+                "state": {
+                    "auto": "Automatisch",
+                    "on": "Ein",
+                    "off": "Aus"
+                }
+            },
+            "auto_effect": {
+                "name": "Auto-Effekt",
+                "state": {
+                    "full": "Voll",
+                    "gradual": "Allmählich",
+                    "following": "Folgend",
+                    "flowing": "Fließend"
+                }
+            },
+            "heater_mode": {
+                "name": "Heizmodus",
+                "state": {
+                    "smart": "Smart",
+                    "auto": "Auto"
+                }
+            },
+            "heater_level": {
+                "name": "Heizstufe",
+                "state": {
+                    "1": "1",
+                    "2": "2",
+                    "3": "3",
+                    "4": "4",
+                    "5": "5"
                 }
             }
         },
@@ -624,6 +664,15 @@
             },
             "last_unlock": {
                 "name": "Letzte Entsperrung"
+            },
+            "heat_exchanger_temperature": {
+                "name": "Wärmetauschertemperatur"
+            },
+            "heater_work_state": {
+                "name": "Heizungsstatus",
+                "state": {
+                    "heating": "Heizen"
+                }
             }
         },
         "switch": {

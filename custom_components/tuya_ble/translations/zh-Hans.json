@@ -220,6 +220,12 @@
             },
             "rain_delay_time": {
                 "name": "雨天延迟时长"
+            },
+            "step_time": {
+                "name": "每级时间"
+            },
+            "off_delay": {
+                "name": "延时关灯"
             }
         },
         "select": {
@@ -347,6 +353,40 @@
                     "smart": "智能",
                     "spot": "定点",
                     "goto_charge": "返回充电站"
+                }
+            },
+            "stair_mode": {
+                "name": "模式",
+                "state": {
+                    "auto": "自动",
+                    "on": "开",
+                    "off": "关"
+                }
+            },
+            "auto_effect": {
+                "name": "自动效果",
+                "state": {
+                    "full": "全亮",
+                    "gradual": "渐亮",
+                    "following": "跟随",
+                    "flowing": "流水"
+                }
+            },
+            "heater_mode": {
+                "name": "加热器模式",
+                "state": {
+                    "smart": "智能",
+                    "auto": "自动"
+                }
+            },
+            "heater_level": {
+                "name": "加热器档位",
+                "state": {
+                    "1": "1",
+                    "2": "2",
+                    "3": "3",
+                    "4": "4",
+                    "5": "5"
                 }
             }
         },
@@ -624,6 +664,15 @@
             },
             "last_unlock": {
                 "name": "上次解锁"
+            },
+            "heat_exchanger_temperature": {
+                "name": "热交换器温度"
+            },
+            "heater_work_state": {
+                "name": "加热器工作状态",
+                "state": {
+                    "heating": "加热中"
+                }
             }
         },
         "switch": {

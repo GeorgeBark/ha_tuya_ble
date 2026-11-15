@@ -220,6 +220,12 @@
             },
             "rain_delay_time": {
                 "name": "Durata del ritardo per pioggia"
+            },
+            "step_time": {
+                "name": "Tempo per gradino"
+            },
+            "off_delay": {
+                "name": "Ritardo di spegnimento"
             }
         },
         "select": {
@@ -347,6 +353,40 @@
                     "smart": "Intelligente",
                     "spot": "Localizzato",
                     "goto_charge": "Ritorna alla base"
+                }
+            },
+            "stair_mode": {
+                "name": "Modalità",
+                "state": {
+                    "auto": "Automatico",
+                    "on": "Acceso",
+                    "off": "Spento"
+                }
+            },
+            "auto_effect": {
+                "name": "Effetto automatico",
+                "state": {
+                    "full": "Completo",
+                    "gradual": "Graduale",
+                    "following": "Inseguimento",
+                    "flowing": "Scorrevole"
+                }
+            },
+            "heater_mode": {
+                "name": "Modalità riscaldatore",
+                "state": {
+                    "smart": "Smart",
+                    "auto": "Auto"
+                }
+            },
+            "heater_level": {
+                "name": "Livello riscaldatore",
+                "state": {
+                    "1": "1",
+                    "2": "2",
+                    "3": "3",
+                    "4": "4",
+                    "5": "5"
                 }
             }
         },
@@ -624,6 +664,15 @@
             },
             "last_unlock": {
                 "name": "Ultimo sblocco"
+            },
+            "heat_exchanger_temperature": {
+                "name": "Temperatura dello scambiatore"
+            },
+            "heater_work_state": {
+                "name": "Stato del riscaldatore",
+                "state": {
+                    "heating": "Riscaldamento"
+                }
             }
         },
         "switch": {

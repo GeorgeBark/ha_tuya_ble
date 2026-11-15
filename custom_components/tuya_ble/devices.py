@@ -648,6 +648,22 @@ devices_database: dict[str, TuyaBLECategoryInfo] = {
             ),
         },
     ),
+    "qn": TuyaBLECategoryInfo(
+        products={
+            # Parking diesel heater
+            # - 1  switch            (bool)
+            # - 2  temp_set          (value, 0-40 C)
+            # - 3  temp_current      (value, -20-300 C) heat exchanger, not room
+            # - 4  mode              (enum: smart, auto)
+            # - 5  level             (enum: 1-5, cloud allows setting 1-3)
+            # - 11 work_state        (enum: heating)
+            # - 13 temp_unit_convert (enum: c, f)
+            "vmdizama": TuyaBLEProductInfo(
+                name="Diesel Heater",
+                manufacturer="MaXpeedingRods",
+            ),
+        },
+    ),
     "wsdcg": TuyaBLECategoryInfo(
         products={
             "ojzlzzsw": TuyaBLEProductInfo(name="Soil moisture sensor"),
@@ -778,6 +794,10 @@ devices_database: dict[str, TuyaBLECategoryInfo] = {
         products={
             "bpqbwf8y": TuyaBLEProductInfo(
                 name="LED BULB B509Z2",
+            ),
+            "c2twgywo": TuyaBLEProductInfo(
+                name="BS64 Stair Light Controller",
+                manufacturer="MiBoxer",
             ),
         },
     ),

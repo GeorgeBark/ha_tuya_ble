@@ -220,6 +220,12 @@
             },
             "rain_delay_time": {
                 "name": "Tiempo de retardo por lluvia"
+            },
+            "step_time": {
+                "name": "Tiempo por escalón"
+            },
+            "off_delay": {
+                "name": "Retardo de apagado"
             }
         },
         "select": {
@@ -347,6 +353,40 @@
                     "smart": "Inteligente",
                     "spot": "Localizado",
                     "goto_charge": "Volver a la base"
+                }
+            },
+            "stair_mode": {
+                "name": "Modo",
+                "state": {
+                    "auto": "Automático",
+                    "on": "Encendido",
+                    "off": "Apagado"
+                }
+            },
+            "auto_effect": {
+                "name": "Efecto automático",
+                "state": {
+                    "full": "Completo",
+                    "gradual": "Gradual",
+                    "following": "Seguimiento",
+                    "flowing": "Fluido"
+                }
+            },
+            "heater_mode": {
+                "name": "Modo del calefactor",
+                "state": {
+                    "smart": "Inteligente",
+                    "auto": "Automático"
+                }
+            },
+            "heater_level": {
+                "name": "Nivel del calefactor",
+                "state": {
+                    "1": "1",
+                    "2": "2",
+                    "3": "3",
+                    "4": "4",
+                    "5": "5"
                 }
             }
         },
@@ -624,6 +664,15 @@
             },
             "last_unlock": {
                 "name": "Último desbloqueo"
+            },
+            "heat_exchanger_temperature": {
+                "name": "Temperatura del intercambiador"
+            },
+            "heater_work_state": {
+                "name": "Estado del calefactor",
+                "state": {
+                    "heating": "Calentando"
+                }
             }
         },
         "switch": {

@@ -69,7 +69,7 @@ BLEAK_EXCEPTIONS = (*BLEAK_RETRY_EXCEPTIONS, OSError)
 
 
 FD50_DEVICE_INFO_PRODUCT_IDS = frozenset(
-    {"jntxv3q4", "9hdajpiw", "2hmqh0ty", "qcrilcpr", "djrqe0q6"}
+    {"jntxv3q4", "9hdajpiw", "2hmqh0ty", "qcrilcpr", "djrqe0q6", "c2twgywo"}
 )
 
 # TuyaOS FD50 lock with protocol-v4 framing that advertises its negotiated MTU.
@@ -78,7 +78,9 @@ SENSITIVE_DP71_PRODUCT_IDS = frozenset({"dappsdq4"})
 
 # Devices that use legacy key derivation even when the cloud returns a sec_key.
 # This is independent of the FD50 payload quirk: mknd4lci uses standard framing.
-LEGACY_KEY_DERIVATION_PRODUCT_IDS = frozenset({"qcrilcpr", "mknd4lci", "gvygg3m8"})
+LEGACY_KEY_DERIVATION_PRODUCT_IDS = frozenset(
+    {"qcrilcpr", "mknd4lci", "gvygg3m8", "c2twgywo"}
+)
 
 
 # @dataclass

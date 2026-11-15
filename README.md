@@ -283,7 +283,7 @@ See a device marked Experimental you have? We could use real world testing feedb
       <td>—</td>
     </tr>
     <tr>
-      <td rowspan="2"><strong>Climate</strong></td>
+      <td rowspan="3"><strong>Climate</strong></td>
       <td><code>wk</code></td>
       <td>Thermostatic Radiator Valve</td>
       <td><code>drlajpqc</code>, <code>nhj2j7su</code>, <code>zmachryv</code></td>
@@ -294,6 +294,12 @@ See a device marked Experimental you have? We could use real world testing feedb
       <td>Thermostatic Radiator Valve</td>
       <td><code>llflaywg</code></td>
       <td>—</td>
+    </tr>
+    <tr>
+      <td><code>qn</code></td>
+      <td>MaXpeedingRods Diesel (parking) Heater</td>
+      <td><code>vmdizama</code></td>
+      <td>Experimental. On/off (DP1) and set point (DP2) via climate; heat exchanger temperature (DP3, blank while off), mode (DP4), level (DP5, settable 1-3) and work state (DP11). The heater ignores level while in its thermostat mode.</td>
     </tr>
     <tr>
       <td><strong>Smart water bottle</strong></td>
@@ -404,8 +410,8 @@ See a device marked Experimental you have? We could use real world testing feedb
       <td>Experimental</td>
     </tr>
     <tr>
-      <td rowspan="5"><strong>Lights</strong></td>
-      <td rowspan="5">Multiple (e.g. <code>dd</code>, <code>dj</code>)</td>
+      <td rowspan="6"><strong>Lights</strong></td>
+      <td rowspan="6">Multiple (e.g. <code>dd</code>, <code>dj</code>)</td>
       <td>Strip Lights / Magiacous RGB light bar</td>
       <td><code>nvfrtxlq</code></td>
       <td rowspan="4">Most BLE light products should be supported as the Light class tries to get device description from the cloud when they are added. But only Strip Lights (category_id 'dd') Magiacous RGB light bar (product_id 'nvfrtxlq') has been tested.<br><br>See note on Bluetooth Mesh light compatibility below.</td>
@@ -426,6 +432,11 @@ See a device marked Experimental you have? We could use real world testing feedb
       <td>LED BULB B509Z2</td>
       <td><code>bpqbwf8y</code></td>
       <td>Experimental</td>
+    </tr>
+    <tr>
+      <td>MiBoxer BS64 Stair Light Controller</td>
+      <td><code>c2twgywo</code></td>
+      <td>Experimental. The light switches the controller between On and Off mode (Auto, sensor triggered, reads as off) and sets brightness and colour temperature. Mode and auto effect selects, step time and light off delay numbers. Uses legacy key derivation even when a secKey is issued.</td>
     </tr>
     <tr>
       <td><strong>Wireless switches</strong></td>
